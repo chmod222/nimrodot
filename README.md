@@ -17,13 +17,16 @@ Note that this is not yet usable for actual development.
     - Fixed-arity and variadic calls
 
   - Proper Godot classes:
-    - Usage if you get a pointer to one
+    - Basic usage
     - Destruction
 
 ## What does not work:
   - Builtin and Proper classes:
-    - Construction of proper classes
-    - Memory management (leaks like a sieve except for trivial cases)
+    - Memory management for all cases
+      - `RefCounted` and manually managed objects *should* work, but currently
+         all objects passed into this library are assumed to be owned by it
+         and will be freed without mercy even if they are lent out references.
+      - Builtins do not yet free their memory
     - Most likely some other things that can not be tested as of yet
 
   - Registering custom classes

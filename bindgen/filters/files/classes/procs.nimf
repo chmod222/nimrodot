@@ -50,6 +50,7 @@ const $constName*: int = $constVal
 #
 proc $ctorName*(): $selfType
   {.gd_class_ctor.}
+
 #  elif def.is_singleton:
 proc $ctorName*(): $selfType
   {.gd_class_singleton.}

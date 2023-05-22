@@ -222,9 +222,15 @@ macro gd_builtin_method*(ty: typed; hash: static[int64]; prototype: untyped) =
         cint(`argc` + len(`varArgId`)))
 
 macro gd_class_ctor*(prototype: untyped) =
+  let selfType = prototype[3][0]
+  let selfTypeStr = selfType.strVal
+
   result = prototype
   result[^1] = quote do:
-    discard
+    var name = `selfTypeStr`.toGodotStringName()
+    defer: destroyStringName name
+
+    result.opaque = gdInterfacePtr.classdb_construct_object(addr name)
 
 macro gd_class_singleton*(prototype: untyped) =
   let selfType = prototype[3][0]
@@ -235,7 +241,7 @@ macro gd_class_singleton*(prototype: untyped) =
     var name = `selfTypeStr`.toGodotStringName()
     defer: destroyStringName name
 
-    `selfType`(opaque: gdInterfacePtr.global_get_singleton(addr name))
+    result.opaque = gdInterfacePtr.global_get_singleton(addr name)
 
 macro gd_class_method*(hash: static[int64]; prototype: untyped) =
   var argc: int

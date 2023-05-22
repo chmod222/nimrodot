@@ -644,7 +644,7 @@ proc render*(meth: ClassMethodDefinition, def: ClassDefinition | BuiltinClassDef
     args &= (bindings: @["args"], `type`: def.makeVarArgsParam())
 
   if def is ClassDefinition:
-    result = "method " & meth.name.safeIdent() & "*" & args.renderArgs()
+    result = "proc " & meth.name.safeIdent() & "*" & args.renderArgs()
   else:
     result = "proc " & meth.name.safeIdent() & "*" & args.renderArgs()
 

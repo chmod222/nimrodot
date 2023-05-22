@@ -22,7 +22,7 @@ Note that this is not yet usable for actual development.
 
 ## What does not work:
   - Builtin and Proper classes:
-    - Construction
+    - Construction of proper classes
     - Memory management (leaks like a sieve except for trivial cases)
     - Most likely some other things that can not be tested as of yet
 

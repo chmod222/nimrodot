@@ -15,12 +15,21 @@
 #  result &= "# Builtin Class " & def.name & " (Procs)\n"
 import ./types/$selfModule
 export $selfModuleExport
+#  if def.inherits.isSome():
+#    let parentName = def.inherits.unsafeGet()
+#    let parentModuleName = parentName.moduleName().safeImport()
+#    let parentModuleNameExport = parentName.moduleName().safeIdent()
+
+import ../classes/$parentModuleName
+export $parentModuleNameExport
+#  end if
 
 import ../gdffi
 
 #  result &= def.renderImportList(
 #    {roProperties, roMethods, roStructFields, roConstructors, roIndexes, roOperators},
-#    "../builtins/types/", "./types/", "../enums", "../native_structs")
+#    "../builtins/types/", "./types/", "../enums", "../native_structs",
+#     def.inherits)
 #
 #  if def.constants.isSome:
 #    result &= "# Constants\n"

@@ -489,12 +489,16 @@ type
 proc renderImportList*(
     dependant: SomeDependant;
     options: set[DependencyResolveOption];
-    builtinsPrefix, classPrefix, enumPath, nativesPath: Option[string]): string =
+    builtinsPrefix, classPrefix, enumPath, nativesPath, ignore: Option[string] = none string): string =
 
   result = ""
 
   var outHints: set[DependencyHint] = {}
-  let references = dependant.referencedTypes(options, outHints)
+  var references = dependant.referencedTypes(options, outHints)
+
+  if ignore.isSome():
+    references.excl ignore.unsafeGet()
+
   let sorted = references.splitClassDependencies()
 
   # Update our cache
@@ -539,12 +543,14 @@ proc renderImportList*(
 proc renderImportList*(
     dependant: SomeDependant;
     options: set[DependencyResolveOption];
-    builtinsPrefix, classPrefix, enumPath, nativesPath: string): string =
+    builtinsPrefix, classPrefix, enumPath, nativesPath: string;
+    ignore: Option[string] = none string): string =
   renderImportList(dependant, options,
     some builtinsPrefix,
     some classPrefix,
     some enumPath,
-    some nativesPath)
+    some nativesPath,
+    ignore)
 
 proc renderImportList*(
     dependant: SomeDependant;
@@ -554,6 +560,7 @@ proc renderImportList*(
     some builtinsPrefix,
     some classPrefix,
     some enumPath,
+    none string,
     none string)
 
 proc renderGetter*(def: ClassDefinition; property: ClassPropertyDefinition): string =

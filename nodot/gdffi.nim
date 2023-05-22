@@ -172,7 +172,6 @@ func getNameFromProto(proto: NimNode): string =
     # `quoted`
     proto[0][1][0].strVal()
 
-# TODO: varargs
 macro gd_builtin_method*(ty: typed; hash: static[int64]; prototype: untyped) =
   let functionName = prototype.getNameFromProto()
 
@@ -278,10 +277,6 @@ macro gd_class_method*(hash: static[int64]; prototype: untyped) =
   else:
     result[^1] = quote do:
       discard
-
-  #echo selfPtr.repr()
-  if methodName == "get_files" or methodName == "open":
-    echo result.repr()
 
 macro gd_builtin_get*(ty: typed; prototype: untyped) =
   let propertyName = prototype.getNameFromProto()

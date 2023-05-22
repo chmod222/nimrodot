@@ -1,0 +1,44 @@
+#? stdtmpl() | standard
+#
+#import ../../api
+#import ../../helpers
+#
+#import std/[strutils, algorithm, options, tables]
+#
+#proc generate*(): string =
+#  result = autogenDisclaimer()
+#  result &= "# Global Enumerations\n"
+#  for enu in apiDef.global_enums:
+#    if not enu.name.startsWith("Variant."):
+#      var duplicates = initOrderedTable[int, seq[EnumValue]]()
+#      var lastValue = none int
+#
+type
+#      let enumName = enu.name
+  $enumName* {.size: sizeof(cint).} = enum
+#      for value in enu.values.sortedByIt(it.value):
+#        if lastValue.isSome() and lastValue.unsafeGet() == value.value:
+#          if value.value notin duplicates:
+#            duplicates[value.value] = @[value]
+#          else:
+#            duplicates[value.value] &= value
+#          end if
+#        else:
+#          lastValue = some value.value
+#
+#          let cleanName = value.cleanName(enu)
+    $cleanName = $value.value
+#        end if
+#      end for
+#      if len(duplicates) > 0:
+
+#        for value, dupes in pairs(duplicates):
+#          for duplicate in dupes:
+#            let cleanDupe = duplicate.cleanName(enu)
+const $cleanDupe*: $enumName = $enumName($value)
+#          end for
+#        end for
+#      end if
+
+#    end if
+#  end for

@@ -1,0 +1,103 @@
+#? stdtmpl() | standard
+#
+#import std/options
+#
+#import ../../../api
+#import ../../../helpers
+#
+#proc generate*(def: BuiltinClassDefinition): string =
+#  let selfType = def.fromSelf().render()
+#  let selfModule = def.moduleName().safeImport()
+#  let selfModuleExport = def.moduleName().safeIdent()
+#
+#  result = autogenDisclaimer()
+#  result &= "# Builtin Class " & def.name & " (Procs)\n"
+import ./types/$selfModule
+export $selfModuleExport
+
+import ../gdffi
+
+#  result &= def.renderImportList(
+#    {roProperties, roMethods, roStructFields, roConstructors, roIndexes, roOperators},
+#    "./types/", "../classes/types/", "../enums", "../native_structs")
+#
+#  if def.constants.isSome:
+#    result &= "# Constants\n"
+#
+#    for constant in def.constants.unsafeGet():
+#      let constName = constant.name.safeIdent()
+#      let constTy = constant.fromConst(def).render()
+#      let constVal = constant.value
+#
+#      if constant.isSimpleType():
+const $constName*: $constTy = $constVal
+#      else:
+let $constName*: $constTy = gd_constant[$constTy, $def.name]("$constName") # $constVal
+#      end if
+#    end for
+
+#  end if
+#  result &= "# Constructors\n"
+#  for ctor in def.constructors:
+#    let ctorPrototype = ctor.render(def)
+$ctorPrototype
+  {.gd_builtin_ctor($def.name, $ctor.index).}
+
+#  end for
+#  if def.has_destructor:
+#    result &= "# Destructor\n"
+#    let dtorPrototype = def.renderDtor()
+$dtorPrototype
+  {.gd_builtin_dtor($def.name).}
+
+#  end if
+#  if def.members.isSome:
+#    result &= "# Properties\n"
+#
+#    for prop in def.members.unsafeGet():
+#      let safeProp = prop.name.safeIdent()
+#      let propType = prop.fromProperty(def).render()
+#
+#      # prop.name below is intentional, as it is already quoted in the source.
+proc $safeProp*(self: $selfType): $propType {.gd_builtin_get($def.name).}
+proc `$prop.name=`*(self: var $selfType; val: $propType) {.gd_builtin_set($def.name).}
+
+#    end for
+#  end if
+#  if def.methods.isSome:
+#    result &= "# Methods\n"
+#
+#    for meth in def.methods.unsafeGet():
+#      let methPrototype = meth.render(def)
+$methPrototype
+  {.gd_builtin_method($def.name, $meth.hash).}
+
+#    end for
+#  end if
+#  if def.indexing_return_type.isSome:
+#    let indexRetType = def.indexing_return_type.unsafeGet().fromVarious(def).render()
+#
+#    result &= "# Indexers\n"
+#
+#    let indexType = (if def.is_keyed: "Variant" else: "int64").fromVarious(def).render()
+#
+proc `[]`*(self: $selfType; idx: $indexType): $indexRetType
+  {.gd_builtin_index_get($def.name).}
+
+#    if indexType != indexRetType:
+proc `[]=`*(self: var $selfType; idx: $indexType; val: $indexRetType)
+  {.gd_builtin_index_set($def.name).}
+#    else:
+proc `[]=`*(self: var $selfType; idx, val: $indexRetType)
+  {.gd_builtin_index_set($def.name).}
+#  end if
+
+#  end if
+#  if len(def.operators) > 0:
+#    result &= "# Operators\n"
+#
+#    for operator in def.operators:
+#      let operProto = operator.render(selfType)
+$operProto {.gd_builtin_operator($def.name).}
+#    end for
+#  end if

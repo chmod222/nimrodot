@@ -1,0 +1,17 @@
+#? stdtmpl() | standard
+#
+#import ../../../api
+#import ../../../helpers
+#
+#proc generateHeader*(): string =
+#  let apiHeader = apiDef.header
+#
+#  result = ""
+const
+  versionMajor* = $apiHeader.version_major
+  versionMinor* = $apiHeader.version_minor
+  versionPatch* = $apiHeader.version_patch
+  versionStatus* = "$apiHeader.version_status"
+  versionBuild* = "$apiHeader.version_build"
+  versionFullName* = "$apiHeader.version_full_name"
+

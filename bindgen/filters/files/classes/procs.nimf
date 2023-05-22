@@ -1,0 +1,77 @@
+#? stdtmpl() | standard
+#
+#import std/[options, enumerate, sets, strutils]
+#
+#import ../../../api
+#import ../../../helpers
+#
+#proc generate*(
+#    def: ClassDefinition): string =
+#  let selfModule = def.moduleName().safeImport()
+#  let selfModuleExport = def.moduleName().safeIdent()
+#  let selfType = def.name
+#
+#  result = autogenDisclaimer()
+#  result &= "# Builtin Class " & def.name & " (Procs)\n"
+import ./types/$selfModule
+export $selfModuleExport
+
+import ../gdffi
+
+#  result &= def.renderImportList(
+#    {roProperties, roMethods, roStructFields, roConstructors, roIndexes, roOperators},
+#    "../builtins/types/", "./types/", "../enums", "../native_structs")
+#
+#  if def.constants.isSome:
+#    result &= "# Constants\n"
+#
+#    for constant in def.constants.unsafeGet():
+#      let constName = constant.name.safeIdent()
+#      let constVal = constant.value
+#
+const $constName*: int = $constVal
+#    end for
+
+#  end if
+#  if def.is_instantiable:
+#    result &= "# Constructor\n"
+#
+#    let ctorName = def.name.deriveCtorName()
+#
+proc $ctorName*(): $selfType =
+  discard
+
+#  end if
+#  if def.methods.isSome:
+#    result &= "# Methods\n"
+#
+#    for meth in def.methods.unsafeGet():
+#      if meth.name.startsWith('_'):
+#        continue
+#      end if
+#
+#      let methPrototype = meth.render(def)
+$methPrototype
+  {.gd_class_method($meth.hash).}
+
+#    #{.gd_builtin_method($def.name, $meth.hash).}
+#
+#    end for
+#  end if
+#
+#  # Properties seem infeasible to auto generate for now.
+#  if false and def.properties.isSome:
+#    result &= "# Properties\n"
+#
+#    for property in def.properties.unsafeGet():
+#      if def.definesMethod(property.getter):
+#        let getterProto = def.renderGetter(property)
+$getterProto = discard
+#      end if
+#      if def.definesMethod(property.setter):
+#        let setterProto = def.renderSetter(property)
+$setterProto = discard
+#      end if
+
+#    end
+#  end if

@@ -1,0 +1,29 @@
+#? stdtmpl() | standard
+#
+#import std/strutils
+#
+#import ../../api
+#import ../../helpers
+#
+#proc generate*(): string =
+#  let structs = apiDef.native_structures
+#
+#  result = autogenDisclaimer()
+#  result &= structs.renderImportList({}, "./builtins/types/", "./classes/types/", "./enums")
+#
+type
+#  for native in structs:
+  $native.name* = object
+#    for field in native.format.split(';'):
+#      var fieldName: string
+#      var fieldType: GodotType
+#
+#      field.parseCtype(fieldName, fieldType)
+#
+#      let rid = fieldName.safeIdent()
+#      let rty = fieldType.render()
+#
+    $rid*: $rty
+#    end for
+
+#  end for

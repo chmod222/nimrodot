@@ -1,0 +1,72 @@
+#? stdtmpl() | standard
+#
+#import std/[options, tables, strutils, algorithm]
+#
+#import ../../../api
+#import ../../../helpers
+#
+#proc generate*(
+#    def: ClassDefinition): string =
+#  let selfType = def.name
+#
+#  result = autogenDisclaimer()
+#
+import ../../ffi
+
+#  if def.inherits.isSome():
+#    let parentName = def.inherits.unsafeGet()
+#    let parentModule = parentName.toLower().safeImport()
+#
+#    # We do need ../types/$module here because for some reason, ./"object" is refused.
+import ../types/$parentModule
+
+type
+  ${def.name}Obj* = object of ${parentName}Obj
+#  else:
+type
+  ${def.name}Obj* = object of RootObj
+    opaque*: pointer
+#  end if
+
+  $def.name* = ref ${def.name}Obj
+
+import ../../hooks
+
+generateHooks(${def.name}Obj, $def.isRefcounted, $def.isSingleton)
+
+#  for enu in def.enums.get(@[]):
+#    if not enu.name.startsWith("Variant."):
+#      var duplicates = initOrderedTable[int, seq[EnumValue]]()
+#      var lastValue = none int
+#
+type
+#      let enumName = enu.name
+  $enumName* {.size: sizeof(cint).} = enum
+#      for value in enu.values.sortedByIt(it.value):
+#        if lastValue.isSome() and lastValue.unsafeGet() == value.value:
+#          if value.value notin duplicates:
+#            duplicates[value.value] = @[value]
+#          else:
+#            duplicates[value.value] &= value
+#          end if
+#        else:
+#          lastValue = some value.value
+#
+#          let cleanName = value.cleanName(enu)
+    $cleanName = $value.value
+#        end if
+#      end for
+#      if len(duplicates) > 0:
+
+#        for value, dupes in pairs(duplicates):
+#          for duplicate in dupes:
+#            let cleanDupe = duplicate.cleanName(enu)
+const $cleanDupe*: $enumName = $enumName($value)
+#          end for
+#        end for
+#      end if
+
+#    end if
+#  end for
+
+var instanceBindingCallbacks: GDExtensionInstanceBindingCallbacks

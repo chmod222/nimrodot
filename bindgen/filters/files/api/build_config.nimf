@@ -1,0 +1,27 @@
+#? stdtmpl() | standard
+#
+#import std/[tables, enumerate, sequtils, strutils]
+#
+#import ../../../helpers
+#import ../../utils/"conditional.nimf"
+#
+#proc generateBuildConfig*(): string =
+#  result = "# Compile with single precision floats, unless defined otherwise.\n"
+const floatPrecision = when defined(nodotDoublePrecision):
+  "double"
+else:
+  "float"
+
+# result &= "# Detect CPU architecture\n"
+const pointerWidth =
+  when sizeOf(pointer) == 4: 32
+  elif sizeOf(pointer) == 8: 64
+  else: {.error: "Unsupported CPU architecture".}
+
+const buildConfig* = floatPrecision & "_" & $$pointerWidth
+
+#  result &= generateConditional("Variant".sizeGroups(), proc(size: int): string =
+#    "const variantSize* = " & $size) & "\n\n"
+#
+#  result &= generateConditional("Object".sizeGroups(), proc(size: int): string =
+#    "const objectSize* = "  & $size) & "\n"

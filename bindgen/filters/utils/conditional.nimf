@@ -1,0 +1,27 @@
+#? stdtmpl() | standard
+#
+#import std/[enumerate, tables, sequtils]
+#
+#func generateConditional*[T](grouped: OrderedTable[T, seq[string]], callable: proc(v: T): string {.noSideEffect.}): string =
+#  result = ""
+#
+#  for i, (thing, cfgs) in enumerate(pairs(grouped)):
+#    let conds = cfgs.mapIt("buildConfig == \"" & it & "\"").join(" or ")
+#
+#    if len(grouped) > 1:
+#      if i == 0:
+when $conds:
+#      else:
+elif $conds:
+#      end if
+#    end if
+#
+#    let id = if len(grouped) > 1: 1 else: 0
+#
+#    result &= (callable(thing).indent(id)  & "\n")
+#    if len(grouped) == 1:
+#      break
+#    end if
+#  end for
+#
+#  result.stripLineEnd()

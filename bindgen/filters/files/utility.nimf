@@ -1,0 +1,22 @@
+#? stdtmpl() | standard
+#
+#import std/[options, sets, enumerate]
+#
+#import ../../api
+#import ../../helpers
+#
+#proc generate*(): string =
+#  let funcs = apiDef.utility_functions
+#
+#  result = autogenDisclaimer()
+#  result &= "# Utility Functions\n"
+#
+import ./gdffi
+#
+
+#  result &= funcs.renderImportList({}, "./builtins/types/", "./classes/types/", "./enums", "./native_structs")
+#  for fn in funcs:
+$fn.render
+  {.gd_utility($fn.hash).}
+
+#  end for

@@ -1,0 +1,46 @@
+#? stdtmpl() | standard
+#
+#import std/enumerate
+#
+#import ../../../api
+#import ../../../helpers
+#
+#proc generate*(): string =
+#  result = autogenDisclaimer()
+#
+import ../ffi
+
+import ./types/[
+#  for i, builtin in enumerate(apiDef.builtin_classes):
+#    if builtin.isNativeClass():
+#      continue
+#    end if
+#
+#    let moduleName = builtin.moduleName().safeImport()
+#    let comma = if i < len(apiDef.builtin_classes) - 1: "," else: ""
+  $moduleName$comma
+#  end for
+]
+
+#  for builtin in apiDef.builtin_classes:
+#    if builtin.isNativeClass():
+#      continue
+#    end if
+#
+#    let moduleName = builtin.moduleName().safeIdent()
+export $moduleName
+#  end for
+
+import ../classes/types/"object"
+
+func variantTypeId*(_: typedesc[bool]): GDExtensionVariantType =
+  GDEXTENSION_VARIANT_TYPE_BOOL
+
+func variantTypeId*(_: typedesc[int64]): GDExtensionVariantType =
+  GDEXTENSION_VARIANT_TYPE_INT
+
+func variantTypeId*(_: typedesc[float64]): GDExtensionVariantType =
+  GDEXTENSION_VARIANT_TYPE_FLOAT
+
+func variantTypeId*(_: typedesc[Object]): GDExtensionVariantType =
+  GDEXTENSION_VARIANT_TYPE_OBJECT

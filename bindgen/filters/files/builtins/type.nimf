@@ -1,0 +1,76 @@
+#? stdtmpl() | standard
+#
+#import std/[tables, options, algorithm, sequtils, enumerate, strutils, sets]
+#
+#import ../../../api
+#import ../../../helpers
+#import ../../utils/"conditional.nimf"
+#
+#proc generate*(
+#    def: BuiltinClassDefinition): string =
+#  let memberGroups = def.memberGroups()
+#  let sizeGroups = def.sizeGroups()
+#  let needsApiImport = not def.isPointerType() and (if def.isOpaque(): len(sizeGroups) > 1 else: len(memberGroups) > 1)
+#
+#  result = autogenDisclaimer()
+#  result &= "# Builtin Class " & def.name & "\n"
+#
+import ../../ffi
+#  if needsApiImport:
+import ../../api
+
+#  else:
+
+#  end if
+#
+#  result &= def.renderImportList({roStructFields}, "./", "../../classes/types", "../../enums", "../../native_structs")
+#
+#  # if not def.isOpaque(apiDef):
+#  #   for members, cfg in memberGroups:
+#  #     let imports = generateImportList(members)
+#  #     if len(imports) > 0:
+#  ## $imports
+#  #    end if
+##
+#  #    break # We only need one iteration to determine all dependencies
+#  #  end for
+#  #end if
+type
+  $def.name* = object
+#  if def.isPointerType():
+    opaque: pointer
+#  else:
+#    if def.isOpaque():
+#      result &= generateConditional(sizeGroups, proc(size: int): string =
+#        "opaque: array[" & $size & ", byte]\n").indent(2)
+#    else:
+#      let members = def.memberGroups()
+#
+#      result &= generateConditional(members, proc(members: seq[MemberOffset]): string =
+#        for member in members:
+#          result &= member.member & "*: " & member.fromField(def).render() & "\n").indent(2)
+#        end for
+#    end if
+#  end if
+#  if def.enums.isSome:
+
+#    result &= "# Enums\n"
+type
+#    for enu in def.enums.unsafeGet():
+#      let enumName = enu.name
+#
+#      # associated enums don't have duplicate values for now, so we can
+#      # keep it simple. They do share names across modules so we do need
+#      # to declare them as pure however.
+  $enumName* {.size: sizeof(cint).} = enum
+#      for field in enu.values.sortedByIt(it.value):
+#        let cleanName = field.cleanName(enu)
+    $cleanName = $field.value
+#      end for
+
+#    end for
+#  else:
+
+#  end if
+func variantTypeId*(_: typedesc[$def.name]): GDExtensionVariantType =
+  cast[GDExtensionVariantType]($def.typeId)

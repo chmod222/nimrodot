@@ -13,9 +13,7 @@ export helpers.toGodotStringName
 # Called in the second run-around of the macro expansion once type information
 # is available to determine if we are dealing with an object type or a builtin
 template getResultPtr*(): pointer {.dirty.} =
-  when compiles(result of ObjectObj):
-    new(result)
-
+  when compiles(result.opaque):
     addr result.opaque
   else:
     addr result

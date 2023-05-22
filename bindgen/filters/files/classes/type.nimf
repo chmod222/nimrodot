@@ -21,19 +21,32 @@ import ../../ffi
 import ../types/$parentModule
 
 type
-  ${def.name}Obj* = object of ${parentName}Obj
+  ${def.name}* = object of ${parentName}
 #  else:
 type
-  ${def.name}Obj* = object of RootObj
+  ${def.name}* = object of RootObj
     opaque*: pointer
 #  end if
 
-  $def.name* = ref ${def.name}Obj
-
+#  # We need to special-case two types: Object and RefCounted.
+#  #
+#  # Object-based classes are freed manually (or rather, =destroy'd) and we
+#  # forbid copying to prevent double frees.
+#  #
+#  # RefCounted-based classes carry a reference count, strangely enough, and
+#  # we access this in our =destroy hook to see if we (otherwise Godot) must
+#  # free the object. The =copy hook just bumps the reference up.
+#
+#  if def.name == "Object" or def.name == "RefCounted":
 import ../../hooks
 
-generateHooks(${def.name}Obj, $def.isRefcounted, $def.isSingleton)
+generateHooks(${def.name}, $def.isRefcounted)
 
+#  elif def.isSingleton():
+proc `=destroy`*(st: var $def.name) =
+  discard
+
+#  end if
 #  for enu in def.enums.get(@[]):
 #    if not enu.name.startsWith("Variant."):
 #      var duplicates = initOrderedTable[int, seq[EnumValue]]()

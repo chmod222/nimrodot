@@ -42,13 +42,17 @@ const $constName*: int = $constVal
 #    end for
 
 #  end if
-#  if def.is_instantiable:
+#
+#  let ctorName = def.name.deriveCtorName()
+#
+#  if def.is_instantiable and not def.is_singleton:
 #    result &= "# Constructor\n"
 #
-#    let ctorName = def.name.deriveCtorName()
-#
-proc $ctorName*(): $selfType =
-  discard
+proc $ctorName*(): $selfType
+  {.gd_class_ctor.}
+#  elif def.is_singleton:
+proc $ctorName*(): $selfType
+  {.gd_class_singleton.}
 
 #  end if
 #  if def.methods.isSome:

@@ -221,6 +221,22 @@ macro gd_builtin_method*(ty: typed; hash: static[int64]; prototype: untyped) =
         cast[ptr GDExtensionConstTypePtr](addr argPtrs[0]),
         cint(`argc` + len(`varArgId`)))
 
+macro gd_class_ctor*(prototype: untyped) =
+  result = prototype
+  result[^1] = quote do:
+    discard
+
+macro gd_class_singleton*(prototype: untyped) =
+  let selfType = prototype[3][0]
+  let selfTypeStr = selfType.strVal
+
+  result = prototype
+  result[^1] = quote do:
+    var name = `selfTypeStr`.toGodotStringName()
+    defer: destroyStringName name
+
+    `selfType`(opaque: gdInterfacePtr.global_get_singleton(addr name))
+
 macro gd_class_method*(hash: static[int64]; prototype: untyped) =
   var argc: int
 

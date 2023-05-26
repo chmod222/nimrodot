@@ -1,24 +1,37 @@
 import std/[macros, genasts, options]
 
-import ./ffi
 import ../nodot
-import ./builtins/variant
-import ./helpers
 import ../nodot/ref_helper
 
+import ./ffi
+import ./helpers
+
+import ./builtins/variant
 import ./builtins/types
+
 import ./classes/types/"object"
 
 export helpers.toGodotStringName
 
 type
-  SelfPtr = object
+  ReturnInfo = object
+    isVoid: bool
+
+    fullType: NimNode
+
+  ParamInfo = object
     isStatic: bool
 
     fullType: NimNode
     binding: NimNode
 
-func resolveSelf(prototype: NimNode): SelfPtr =
+func resolveReturn(prototype: NimNode): ReturnInfo =
+  if prototype[3][0].kind == nnkEmpty:
+    result.isVoid = true
+  else:
+    result.fullType = prototype[3][0]
+
+func resolveSelf(prototype: NimNode): ParamInfo =
   if len(prototype[3]) > 1 and prototype[3][1][0] == "_".ident():
     result.fullType = prototype[3][1][1][1]
     result.isStatic = true
@@ -31,55 +44,57 @@ func resolveSelf(prototype: NimNode): SelfPtr =
     else:
       result.fullType = prototype[3][1][1]
 
-func isRefCountWrapper(s: SelfPtr): bool =
+func isRefCountWrapper(s: ParamInfo | ReturnInfo): bool =
   s.fullType.kind == nnkBracketExpr and s.fullType[0].strVal == "Ref"
 
-func reduceType(s: SelfPtr): NimNode =
+func reduceType(s: ParamInfo | ReturnInfo): NimNode =
   if s.fullType.kind == nnkBracketExpr:
     s.fullType[1]
   else:
     s.fullType
+
+func reducePtr(s: ParamInfo): NimNode =
+  if s.isStatic:
+    # Static methods take a nil pointer
+    newNilLit()
+  elif s.isRefCountWrapper:
+    # Ref[T] wrappers reduce to self[].opaque
+    newDotExpr(newTree(nnkBracketExpr, s.binding), "opaque".ident())
+  else:
+    # Everything else reduces to self.opaque
+    newDotExpr(s.binding, "opaque".ident())
+
+func reducePtr(r: ReturnInfo): NimNode =
+  if r.isVoid:
+    # No result pointer for void procs
+    newNilLit()
+  else:
+    # We delegate to the nim compiler via template because we need type info here
+    newCall("getResultPtr".ident())
+
+func reduceAddr(s: ParamInfo): NimNode =
+  if s.isStatic:
+    newNilLit()
+  elif s.isRefCountWrapper:
+    newCall("addr".ident(), newDotExpr(newTree(nnkBracketExpr, s.binding), "opaque".ident()))
+  else:
+    newCall("getResultPtr".ident())
 
 # Called in the second run-around of the macro expansion once type information
 # is available to determine if we are dealing with an object type or a builtin
 template getResultPtr*(): pointer {.dirty.} =
   when compiles(result.opaque):
     addr result.opaque
-  else:
+  elif compiles(result):
     addr result
-
-func getFuncResultPtr(prototype: NimNode): NimNode =
-  if prototype[3][0].kind == nnkEmpty:
-    newNilLit()
   else:
-    newCall(ident("getResultPtr"))
+    nil
 
-func getSelfPtr(prototype: NimNode; asPtr: bool = true): NimNode =
-  if len(prototype[3]) > 1 and prototype[3][1][0] == "_".ident():
-    newNilLit()
+template getParamPtr*(p: untyped): pointer {.dirty.} =
+  when compiles(p.opaque):
+    addr p.opaque
   else:
-    let ident = prototype[3][1][0]
-
-    if not asPtr:
-      if prototype[3][1][1].kind == nnkBracketExpr:
-        return newDotExpr(newTree(nnkBracketExpr, ident), "opaque".ident())
-      else:
-        return newDotExpr(ident, "opaque".ident())
-
-    if prototype[3][1][^2].kind == nnkVarTy:
-      newCall(ident("addr"), ident)
-    else:
-      newCall(ident("unsafeAddr"), ident)
-
-func getSelfType(prototype: NimNode): NimNode =
-  if len(prototype[3]) > 1 and prototype[3][1][0] == "_".ident():
-    prototype[3][1][1][1]
-  else:
-    if prototype[3][1][^2].kind == nnkVarTy:
-      prototype[3][1][1][0]
-    else:
-      prototype[3][1][1]
-
+    addr p
 
 
 func getVarArgs(prototype: NimNode): Option[NimNode] =
@@ -100,16 +115,10 @@ func genArgsList(prototype: NimNode; argc: ptr int; ignoreFirst: bool = false): 
   else:
     # We ignore the first arg for (non-builtin) class methods because the instance
     # pointer is passed as separate argument.
-    if ignoreFirst:
-      2
-    else:
-      1
+    if ignoreFirst: 2 else: 1
 
   # Do not include the varargs here, they are handled specially
-  let drop = if getVarArgs(prototype).isSome():
-    1
-  else:
-    0
+  let drop = if getVarArgs(prototype).isSome(): 1 else: 0
 
   if skip > len(prototype[3]) - 1:
     return
@@ -144,7 +153,7 @@ macro gd_utility*(hash: static[int64]; prototype: untyped) =
 
   var argc: int
 
-  let resultPtr = prototype.getFuncResultPtr()
+  let resultPtr = prototype.resolveReturn().reducePtr()
   let varArgs = prototype.getVarArgs()
   let args = prototype.genArgsList(addr argc)
 
@@ -192,7 +201,7 @@ macro gd_builtin_ctor*(ty: typed; idx: static[int]; prototype: untyped) =
     p(addr result, cast[ptr GDExtensionConstTypePtr](addr argPtrs))
 
 macro gd_builtin_dtor*(ty: typed; prototype: untyped) =
-  let selfPtr = prototype.getSelfPtr()
+  let selfPtr = prototype.resolveSelf().reducePtr()
 
   result = prototype
   result[^1] = quote do:
@@ -217,8 +226,9 @@ macro gd_builtin_method*(ty: typed; hash: static[int64]; prototype: untyped) =
 
   var argc: int
 
-  let selfPtr = prototype.getSelfPtr()
-  let resultPtr = prototype.getFuncResultPtr()
+  let selfPtr = prototype.resolveSelf().reduceAddr()
+  let resultPtr = prototype.resolveReturn().reducePtr()
+
   let args = prototype.genArgsList(addr argc)
   let varArgs = prototype.getVarArgs()
 
@@ -254,8 +264,8 @@ macro gd_builtin_method*(ty: typed; hash: static[int64]; prototype: untyped) =
         cint(`argc` + len(`varArgId`)))
 
 macro gd_class_ctor*(prototype: untyped) =
-  let selfType = prototype[3][0]
-  let selfTypeStr = selfType.strVal
+  let selfType = prototype.resolveReturn().reduceType()
+  let selfTypeStr = selfType.strVal()
 
   result = prototype
   result[^1] = quote do:
@@ -264,7 +274,7 @@ macro gd_class_ctor*(prototype: untyped) =
     result.opaque = gdInterfacePtr.classdb_construct_object(addr name)
 
 macro gd_class_singleton*(prototype: untyped) =
-  let selfType = prototype[3][0]
+  let selfType = prototype.resolveReturn().reduceType()
 
   result = prototype
   result[^1] = quote do:
@@ -275,24 +285,25 @@ macro gd_class_singleton*(prototype: untyped) =
       gdTokenPtr,
       `selfType`.gdInstanceBindingCallbacks))
 
+
+template constructResultObject[T](dest: typedesc[Ref[T]]; raw: T): Ref[T] =
+  newRefShallow(raw)
+
+template constructResultObject[T](dest: typedesc[T]; raw: T): T =
+  raw
+
 macro gd_class_method*(hash: static[int64]; prototype: untyped) =
   var argc: int
   let args = prototype.genArgsList(addr argc, true)
 
-  var s = prototype.resolveSelf
-
-  let selfPtr = if s.isStatic:
-    newNilLit()
-  elif s.isRefCountWrapper:
-    newDotExpr(newTree(nnkBracketExpr, s.binding), "opaque".ident())
-  else:
-    newDotExpr(s.binding, "opaque".ident())
+  var s = prototype.resolveSelf()
+  var r = prototype.resolveReturn()
 
   result = prototype
   result[^1] = genAst(
-      selfType = s.reduceType,
-      selfPtr,
-      resultPtr = prototype.getFuncResultPtr(),
+      selfType = s.reduceType(),
+      selfPtr = s.reducePtr(),
+      resultPtr = r.reducePtr(),
       methodName = prototype.getNameFromProto(),
       hash, argc, args):
 
@@ -305,36 +316,22 @@ macro gd_class_method*(hash: static[int64]; prototype: untyped) =
       cast[ptr GDExtensionConstTypePtr](addr fixedArgs),
       cast[GDExtensionTypePtr](resultPtr))
 
-template constructResultObject[T](dest: typedesc[Ref[T]]; raw: T): Ref[T] =
-  newRefShallow(raw)
-
-template constructResultObject[T](dest: typedesc[T]; raw: T): T =
-  raw
-
 macro gd_class_method_obj*(hash: static[int64]; prototype: untyped) =
   var argc: int
   let args = prototype.genArgsList(addr argc, true)
 
-  var isRefc = false
-
-  let fullRetType = prototype[3][0]
-  let retType = if prototype[3][0].kind == nnkBracketExpr and
-      prototype[3][0][0].strVal == "Ref":
-    isRefc = true
-    prototype[3][0][1]
-  else:
-    prototype[3][0]
+  var s = prototype.resolveSelf()
+  var r = prototype.resolveReturn()
 
   result = prototype
   result[^1] = genAst(
-      selfType = prototype.getSelfType(),
-      selfPtr = prototype.getSelfPtr(false),
+      selfType = s.reduceType(),
+      selfPtr = s.reducePtr(),
       methodName = prototype.getNameFromProto(),
-      retType,
-      fullRetType,
-      hash,
-      argc,
-      args):
+      retType = r.reduceType(),
+      fullRetType = r.fullType,
+      hash, argc, args):
+
     var p {.global.} = getClassMethodBindPtr($selfType, methodName, hash)
     var fixedArgs: array[argc, GDExtensionConstTypePtr] = args
 
@@ -356,8 +353,8 @@ macro gd_class_method_obj*(hash: static[int64]; prototype: untyped) =
 macro gd_builtin_get*(ty: typed; prototype: untyped) =
   let propertyName = prototype.getNameFromProto()
 
-  let selfPtr = prototype.getSelfPtr()
-  let resultPtr = prototype.getFuncResultPtr()
+  let selfPtr = prototype.resolveSelf().reduceAddr()
+  let resultPtr = prototype.resolveReturn().reducePtr()
 
   result = prototype
   result[^1] = genAst(propertyName, ty, selfPtr, resultPtr):
@@ -373,7 +370,7 @@ macro gd_builtin_get*(ty: typed; prototype: untyped) =
 macro gd_builtin_set*(ty: typed; prototype: untyped) =
   let propertyName = prototype[0][1][0].strVal()
 
-  let selfPtr = prototype.getSelfPtr()
+  let selfPtr = prototype.resolveSelf().reduceAddr()
   let valPtr = prototype[3][2][0]
 
   result = prototype
@@ -410,8 +407,8 @@ macro gd_builtin_index_get*(ty: typed; prototype: untyped) =
 
   prototype.indexParams(false, addr fn, addr idxType, addr idxNode)
 
-  let selfPtr = prototype.getSelfPtr()
-  let resultPtr = prototype.getFuncResultPtr()
+  let selfPtr = prototype.resolveSelf().reduceAddr()
+  let resultPtr = prototype.resolveReturn().reducePtr()
 
   result = prototype
   result[^1] = quote do:
@@ -429,7 +426,7 @@ macro gd_builtin_index_set*(ty: typed; prototype: untyped) =
 
   prototype.indexParams(true, addr fn, addr idxType, addr idxNode)
 
-  let selfPtr = prototype.getSelfPtr()
+  let selfPtr = prototype.resolveSelf().reduceAddr()
   let valId = prototype[3][^1][^3]
 
   result = prototype

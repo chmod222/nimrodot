@@ -13,7 +13,8 @@ proc `=destroy`*[T](r: var Ref[T]) =
     return
 
   if r.downRef():
-    gdInterfacePtr.mem_free(r.reference.opaque)
+    gdInterfacePtr.object_destroy(r.reference.opaque)
+
     r.reference = nil
 
 proc `=sink`*[T](dest: var Ref[T]; source: Ref[T]) =

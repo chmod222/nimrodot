@@ -29,7 +29,7 @@ proc makeInstanceFunctions*[T](_: typedesc[T]): GDExtensionInstanceBindingCallba
     cast[T](result)[] = `TObj`(opaque: instance)
 
   proc free_callback(token, instance, binding: pointer) {.cdecl.} =
-    gdInterfacePtr.mem_free(instance)
+    gdInterfacePtr.mem_free(binding)
 
   proc reference_callback(token, instance: pointer; reference: GDExtensionBool): GDExtensionBool {.cdecl.} =
     1

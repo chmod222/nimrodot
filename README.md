@@ -30,6 +30,11 @@ Note that this is not yet usable for actual development.
 
   - Registering custom classes
 
+## What somewhat works:
+  - TypedArray[T] does not enforce the `T` or `Typed` part so far, but with some self discipline it
+    will work until compile time enforcements are implemented.
+
+
 Most of the exciting stuff is now blocked on actually understanding who, and when, is
 responsible for freeing memory and calling destructors (further complicated
 by the existence of `RefCounted`) and properly mapping it to Nim. This might

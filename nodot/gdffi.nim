@@ -172,11 +172,7 @@ macro gd_utility*(hash: static[int64]; prototype: untyped) =
     let varArgId = varArgs.unsafeGet()[0]
 
     result[^1] = quote do:
-      var p {.global.} = block:
-        var gdFuncName = `functionName`.toGodotStringName()
-
-        gdInterfacePtr.variant_get_ptr_utility_function(addr gdFuncName, `hash`)
-
+      var p {.global.} = getUtilityFunctionPtr(`functionName`, `hash`)
       var argPtrs = @`args`
 
       for i in 0..high(`varArgId`):

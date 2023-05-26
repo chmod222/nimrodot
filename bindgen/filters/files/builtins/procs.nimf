@@ -44,13 +44,6 @@ $ctorPrototype
   {.gd_builtin_ctor($def.name, $ctor.index).}
 
 #  end for
-#  if def.has_destructor:
-#    result &= "# Destructor\n"
-#    let dtorPrototype = def.renderDtor()
-$dtorPrototype
-  {.gd_builtin_dtor($def.name).}
-
-#  end if
 #  if def.members.isSome:
 #    result &= "# Properties\n"
 #

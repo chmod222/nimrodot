@@ -74,3 +74,9 @@ type
 #  end if
 func variantTypeId*(_: typedesc[$def.name]): GDExtensionVariantType =
   cast[GDExtensionVariantType]($def.typeId)
+
+#  if def.has_destructor:
+import ../../hooks
+
+generateBuiltinHooks($def.name, $def.copyCtorIdx)
+#  end if

@@ -463,6 +463,14 @@ func getMethod*(class: ClassDefinition; meth: string): Option[ClassMethodDefinit
     if m.name == meth:
       return some m
 
+func copyCtorIdx*(builtin: BuiltinClassDefinition): int =
+  for constructor in builtin.constructors:
+    if constructor.arguments.isSome() and
+        len(constructor.arguments.unsafeGet()) == 1 and
+        constructor.arguments.unsafeGet()[0].`type` == builtin.name:
+
+      return constructor.index
+
 func definesMethod*(class: ClassDefinition; meth: string): bool =
   class.getMethod(meth).isSome()
 

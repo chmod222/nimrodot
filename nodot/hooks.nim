@@ -1,30 +1,20 @@
-import std/[genasts, typetraits]
+import std/genasts
 import ../nodot
 
-macro generateHooks*(T: typedesc, isRefcounted: static[bool]) =
-  if isRefcounted:
-    result = genAst(T):
-      import nodot/classes/refcounted
+macro generateBuiltinHooks*(T: typedesc; copyCtorIdx: static[int]) =
+  result = genAst(T, copyCtorIdx):
+    proc `=copy`*(a: var T; b: T) =
+      var copyCtor {.global.} = gdInterfacePtr.variant_get_ptr_constructor(
+        T.variantTypeId, copyCtorIdx)
 
-      proc `=copy`*(a: var T; b: T) =
-        discard a.reference()
+      let args: array[1, GDExtensionConstTypePtr] = [
+        cast[GDExtensionConstTypePtr](unsafeAddr b)
+      ]
 
-        a.opaque = b.opaque
+      copyCtor(addr a, cast[ptr GDExtensionConstTypePtr](unsafeAddr args))
 
-      proc `=destroy`*(st: var T) =
-        discard st.unreference()
+    proc `=destroy`*(st: var T) =
+      var p {.global.} = gdInterfacePtr.variant_get_ptr_destructor(
+        T.variantTypeId)
 
-        if st.get_reference_count() == 0:
-          gdInterfacePtr.object_destroy(st.opaque)
-  else:
-    result = genAst(T):
-      proc `=destroy`*(st: var T) =
-        gdInterfacePtr.object_destroy(st.opaque)
-
-      proc `=sink`(dest: var T; source: T) =
-        wasMoved(dest)
-
-        dest.opaque = source.opaque
-
-      proc `=copy`*(a: var T; b: T)
-        {.error.}
+      p(cast[GDExtensionTypePtr](addr st))

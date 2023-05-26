@@ -14,7 +14,6 @@ export ffi
 
 proc getSingleton*[T: Object](name: string): T =
   var name = name.toGodotStringName()
-  defer: destroyStringName name
 
   T(opaque: gdInterfacePtr.global_get_singleton(addr name))
 

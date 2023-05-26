@@ -70,7 +70,6 @@ proc call*(self: var Variant; meth: string; args: varargs[Variant, newVariant]):
       cast[GDExtensionConstVariantPtr](unsafeAddr args[i])
 
   var methodName = toGodotStringName(meth)
-  defer: destroyStringName methodName
 
   gdInterfacePtr.variant_call(
     cast[GDExtensionVariantPtr](addr self),
@@ -90,7 +89,6 @@ proc call*(ty: Type; meth: string; args: varargs[Variant, newVariant]): Variant 
       cast[GDExtensionConstVariantPtr](unsafeAddr args[i])
 
   var methodName = toGodotStringName(meth)
-  defer: destroyStringName methodName
 
   gdInterfacePtr.variant_call_static(
     cast[GDExtensionVariantType](ty),
@@ -117,7 +115,6 @@ proc get*(self: Variant; key: string): Variant =
   var isValid: GDExtensionBool
 
   var keyName = toGodotStringName(key)
-  defer: destroyStringName keyName
 
   gdInterfacePtr.variant_get_named(
     cast[GDExtensionConstVariantPtr](unsafeAddr self),
@@ -142,7 +139,6 @@ proc set*(self: var Variant; key: string; value: Variant) =
   var isValid: GDExtensionBool
 
   var keyName = toGodotStringName(key)
-  defer: destroyStringName keyName
 
   gdInterfacePtr.variant_set_named(
     cast[GDExtensionVariantPtr](addr self),
@@ -250,7 +246,6 @@ proc getType*(self: Variant): Type =
 
 proc hasMethod*(self: Variant; meth: string): bool =
   var methodName = toGodotStringName(meth)
-  defer: destroyStringName methodName
 
   gdInterfacePtr.variant_has_method(
     cast[GDExtensionConstVariantPtr](unsafeAddr self),
@@ -258,7 +253,6 @@ proc hasMethod*(self: Variant; meth: string): bool =
 
 proc hasProperty*(ty: Type; prop: string): bool =
   var propName = toGodotStringName(prop)
-  defer: destroyStringName propName
 
   gdInterfacePtr.variant_has_member(
     cast[GDExtensionVariantType](ty),

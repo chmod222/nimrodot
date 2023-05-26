@@ -1,4 +1,4 @@
-import std/[macros, options]
+import std/[macros, genasts, options]
 
 import ./ffi
 import ../nodot
@@ -91,6 +91,24 @@ func genArgsList(prototype: NimNode; argc: ptr int; ignoreFirst: bool = false): 
       result.add quote do:
         pointer(unsafeAddr `formalArg`)
 
+# We need to put these into dedicated functions rather than `block:` statements due to
+# bad codegen with destructors present.
+proc getUtilityFunctionPtr(fun: static[string]; hash: static[int64]): GDExtensionPtrUtilityFunction =
+  var gdFuncName = fun.toGodotStringName()
+
+  gdInterfacePtr.variant_get_ptr_utility_function(addr gdFuncName, hash)
+
+proc getBuiltinMethodPtr[T](meth: static[string]; hash: static[int64]): GDExtensionPtrBuiltInMethod =
+  var gdFuncName = meth.toGodotStringName()
+
+  gdInterfacePtr.variant_get_ptr_builtin_method(T.variantTypeId, addr gdFuncName, hash)
+
+proc getClassMethodBindPtr*(cls, meth: static[string]; hash: static[int64]): GDExtensionMethodBindPtr =
+  var gdClassName = cls.toGodotStringName()
+  var gdMethName = meth.toGodotStringName()
+
+  gdInterfacePtr.classdb_get_method_bind(addr gdClassName, addr gdMethName, hash)
+
 macro gd_utility*(hash: static[int64]; prototype: untyped) =
   let functionName = prototype[0][1].strVal()
 
@@ -104,14 +122,7 @@ macro gd_utility*(hash: static[int64]; prototype: untyped) =
 
   if varArgs.isNone():
     result[^1] = quote do:
-      var p {.global.} = block:
-        var gdFuncName = `functionName`.toGodotStringName()
-
-        try:
-          gdInterfacePtr.variant_get_ptr_utility_function(addr gdFuncName, `hash`)
-        finally:
-          destroyStringName gdFuncName
-
+      var p {.global.} = getUtilityFunctionPtr(`functionName`, `hash`)
       var argPtrs: array[`argc`, GDExtensionConstTypePtr] = `args`
 
       p(
@@ -125,10 +136,7 @@ macro gd_utility*(hash: static[int64]; prototype: untyped) =
       var p {.global.} = block:
         var gdFuncName = `functionName`.toGodotStringName()
 
-        try:
-          gdInterfacePtr.variant_get_ptr_utility_function(addr gdFuncName, `hash`)
-        finally:
-          destroyStringName gdFuncName
+        gdInterfacePtr.variant_get_ptr_utility_function(addr gdFuncName, `hash`)
 
       var argPtrs = @`args`
 
@@ -184,14 +192,7 @@ macro gd_builtin_method*(ty: typed; hash: static[int64]; prototype: untyped) =
 
   if varArgs.isNone():
     result[^1] = quote do:
-      var p {.global.} = block:
-        var gdFuncName = `functionName`.toGodotStringName()
-
-        try:
-          gdInterfacePtr.variant_get_ptr_builtin_method(`ty`.variantTypeId, addr gdFuncName, `hash`)
-        finally:
-          destroyStringName gdFuncName
-
+      var p {.global.} = getBuiltinMethodPtr[`ty`](`functionName`, `hash`)
       var argPtrs: array[`argc`, GDExtensionConstTypePtr] = `args`
 
       p(
@@ -206,10 +207,7 @@ macro gd_builtin_method*(ty: typed; hash: static[int64]; prototype: untyped) =
       var p {.global.} = block:
         var gdFuncName = `functionName`.toGodotStringName()
 
-        try:
-          gdInterfacePtr.variant_get_ptr_builtin_method(`ty`.variantTypeId, addr gdFuncName, `hash`)
-        finally:
-          destroyStringName gdFuncName
+        gdInterfacePtr.variant_get_ptr_builtin_method(`ty`.variantTypeId, addr gdFuncName, `hash`)
 
       var argPtrs = @`args`
 
@@ -305,18 +303,15 @@ macro gd_builtin_get*(ty: typed; prototype: untyped) =
   let resultPtr = prototype.getFuncResultPtr()
 
   result = prototype
-  result[^1] = quote do:
+  result[^1] = genAst(propertyName, ty, selfPtr, resultPtr):
     var p {.global.} = block:
-      var gdFuncName = `propertyName`.toGodotStringName()
+      var gdFuncName = propertyName.toGodotStringName()
 
-      try:
-        gdInterfacePtr.variant_get_ptr_getter(`ty`.variantTypeId, addr gdFuncName)
-      finally:
-        destroyStringName gdFuncName
+      gdInterfacePtr.variant_get_ptr_getter(ty.variantTypeId, addr gdFuncName)
 
     p(
-      cast[GDExtensionConstTypePtr](`selfPtr`),
-      cast[GDExtensionTypePtr](`resultPtr`))
+      cast[GDExtensionConstTypePtr](selfPtr),
+      cast[GDExtensionTypePtr](resultPtr))
 
 macro gd_builtin_set*(ty: typed; prototype: untyped) =
   let propertyName = prototype[0][1][0].strVal()
@@ -325,18 +320,15 @@ macro gd_builtin_set*(ty: typed; prototype: untyped) =
   let valPtr = prototype[3][2][0]
 
   result = prototype
-  result[^1] = quote do:
+  result[^1] = genAst(propertyName, ty, selfPtr, valPtr):
     var p {.global.} = block:
-      var gdFuncName = `propertyName`.toGodotStringName()
+      var gdFuncName = propertyName.toGodotStringName()
 
-      try:
-        gdInterfacePtr.variant_get_ptr_setter(`ty`.variantTypeId, addr gdFuncName)
-      finally:
-        destroyStringName gdFuncName
+      gdInterfacePtr.variant_get_ptr_setter(ty.variantTypeId, addr gdFuncName)
 
     p(
-      cast[GDExtensionTypePtr](`selfPtr`),
-      cast[GDExtensionConstTypePtr](unsafeAddr `valPtr`))
+      cast[GDExtensionTypePtr](selfPtr),
+      cast[GDExtensionConstTypePtr](unsafeAddr valPtr))
 
 func isKeyedIndex(node: NimNode): bool =
   node[3][2][^2].strVal == "Variant"
@@ -454,7 +446,5 @@ proc gd_constant*[K, T](name: static[string]): T =
     cast[GDExtensionVariantType](T.variantTypeId),
     addr gdName,
     addr resVariant)
-
-  destroyStringName gdName
 
   resVariant.castTo(K)

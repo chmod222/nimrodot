@@ -7,11 +7,14 @@
 #
 #proc generate*(
 #    def: ClassDefinition): string =
-#  let selfType = def.name
-#
 #  result = autogenDisclaimer()
 #
+import ../../builtins/types/stringname
+import ../../helpers
 import ../../ffi
+#  if def.isRefcounted:
+import ../../ref_helper
+#  end if
 
 #  if def.inherits.isSome():
 #    let parentName = def.inherits.unsafeGet()
@@ -21,37 +24,28 @@ import ../../ffi
 import ../types/$parentModule
 
 type
-  ${def.name}* = object of ${parentName}
+  ${def.name}* = ptr object of ${parentName}
 #  else:
 type
-  ${def.name}* = object of RootObj
+  ${def.name}* = ptr object of RootObj
     opaque*: pointer
 #  end if
 
-#  # We need to special-case two types: Object and RefCounted.
-#  #
-#  # Object-based classes are freed manually (or rather, =destroy'd) and we
-#  # forbid copying to prevent double frees.
-#  #
-#  # RefCounted-based classes carry a reference count, strangely enough, and
-#  # we access this in our =destroy hook to see if we (otherwise Godot) must
-#  # free the object. The =copy hook just bumps the reference up.
-#
-#  if def.name == "Object" or def.name == "RefCounted":
-import ../../hooks
+var instanceBindingCallbacks* = default(GDExtensionInstanceBindingCallbacks)
+var className: StringName = toGodotStringName("$def.name")
 
-generateHooks(${def.name}, $def.isRefcounted)
+proc gdInstanceBindingCallbacks*(_: typedesc[$def.name]): ptr GDExtensionInstanceBindingCallbacks =
+  addr instanceBindingCallbacks
 
-#  elif def.isSingleton():
-proc `=destroy`*(st: var $def.name) =
-  discard
+proc gdClassName*(_: typedesc[$def.name]): StringName = className
 
-#  end if
+instanceBindingCallbacks = makeInstanceFunctions($def.name)
 #  for enu in def.enums.get(@[]):
 #    if not enu.name.startsWith("Variant."):
 #      var duplicates = initOrderedTable[int, seq[EnumValue]]()
 #      var lastValue = none int
 #
+
 type
 #      let enumName = enu.name
   $enumName* {.size: sizeof(cint).} = enum
@@ -78,8 +72,14 @@ const $cleanDupe*: $enumName = $enumName($value)
 #          end for
 #        end for
 #      end if
-
 #    end if
 #  end for
+#  if def.isRefcounted:
 
-var instanceBindingCallbacks: GDExtensionInstanceBindingCallbacks
+#    var parent = apiDef.classTypes[def.inherits.unsafeGet]
+#
+#    while parent.isRefCounted:
+converter to$parent.name*(x: sink Ref[$def.name]): Ref[$parent.name] = x.castRef($parent.name)
+#      parent = apiDef.classTypes[parent.inherits.unsafeGet]
+#    end while
+#  end if

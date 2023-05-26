@@ -66,7 +66,11 @@ proc $ctorName*(): $selfType
 #
 #      let methPrototype = meth.render(def)
 $methPrototype
+#  if meth.return_value.isSome() and meth.return_value.unsafeGet().`type`.isClassType:
+  {.gd_class_method_obj($meth.hash).}
+#  else:
   {.gd_class_method($meth.hash).}
+#  end if:
 
 #    #{.gd_builtin_method($def.name, $meth.hash).}
 #

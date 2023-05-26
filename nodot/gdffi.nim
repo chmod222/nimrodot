@@ -4,11 +4,41 @@ import ./ffi
 import ../nodot
 import ./builtins/variant
 import ./helpers
+import ../nodot/ref_helper
 
 import ./builtins/types
 import ./classes/types/"object"
 
 export helpers.toGodotStringName
+
+type
+  SelfPtr = object
+    isStatic: bool
+
+    fullType: NimNode
+    binding: NimNode
+
+func resolveSelf(prototype: NimNode): SelfPtr =
+  if len(prototype[3]) > 1 and prototype[3][1][0] == "_".ident():
+    result.fullType = prototype[3][1][1][1]
+    result.isStatic = true
+  else:
+    result.isStatic = false
+    result.binding = prototype[3][1][0]
+
+    if prototype[3][1][^2].kind == nnkVarTy:
+      result.fullType = prototype[3][1][1][0]
+    else:
+      result.fullType = prototype[3][1][1]
+
+func isRefCountWrapper(s: SelfPtr): bool =
+  s.fullType.kind == nnkBracketExpr and s.fullType[0].strVal == "Ref"
+
+func reduceType(s: SelfPtr): NimNode =
+  if s.fullType.kind == nnkBracketExpr:
+    s.fullType[1]
+  else:
+    s.fullType
 
 # Called in the second run-around of the macro expansion once type information
 # is available to determine if we are dealing with an object type or a builtin
@@ -22,10 +52,7 @@ func getFuncResultPtr(prototype: NimNode): NimNode =
   if prototype[3][0].kind == nnkEmpty:
     newNilLit()
   else:
-    if prototype[3][0].getType is Object:
-      newEmptyNode()
-    else:
-      newCall(ident("getResultPtr"))
+    newCall(ident("getResultPtr"))
 
 func getSelfPtr(prototype: NimNode; asPtr: bool = true): NimNode =
   if len(prototype[3]) > 1 and prototype[3][1][0] == "_".ident():
@@ -34,7 +61,10 @@ func getSelfPtr(prototype: NimNode; asPtr: bool = true): NimNode =
     let ident = prototype[3][1][0]
 
     if not asPtr:
-      return newDotExpr(ident, "opaque".ident())
+      if prototype[3][1][1].kind == nnkBracketExpr:
+        return newDotExpr(newTree(nnkBracketExpr, ident), "opaque".ident())
+      else:
+        return newDotExpr(ident, "opaque".ident())
 
     if prototype[3][1][^2].kind == nnkVarTy:
       newCall(ident("addr"), ident)
@@ -172,7 +202,11 @@ macro gd_builtin_dtor*(ty: typed; prototype: untyped) =
     p(cast[GDExtensionTypePtr](`selfPtr`))
 
 func getNameFromProto(proto: NimNode): string =
-  if proto[0][1].kind == nnkIdent:
+  if proto[0].kind in {nnkIdent, nnkSym}:
+    # "funcname"
+    proto[0].strVal()
+  elif proto[0][1].kind in {nnkIdent, nnkSym}:
+    # "funcname*"
     proto[0][1].strVal()
   else:
     # `quoted`
@@ -226,75 +260,98 @@ macro gd_class_ctor*(prototype: untyped) =
   result = prototype
   result[^1] = quote do:
     var name = `selfTypeStr`.toGodotStringName()
-    defer: destroyStringName name
 
     result.opaque = gdInterfacePtr.classdb_construct_object(addr name)
 
 macro gd_class_singleton*(prototype: untyped) =
   let selfType = prototype[3][0]
-  let selfTypeStr = selfType.strVal
 
   result = prototype
   result[^1] = quote do:
-    var name = `selfTypeStr`.toGodotStringName()
-    defer: destroyStringName name
+    var name = `selfType`.gdClassName()
 
-    result.opaque = gdInterfacePtr.global_get_singleton(addr name)
+    cast[`selfType`](gdInterfacePtr.object_get_instance_binding(
+      gdInterfacePtr.global_get_singleton(addr name),
+      gdTokenPtr,
+      `selfType`.gdInstanceBindingCallbacks))
 
 macro gd_class_method*(hash: static[int64]; prototype: untyped) =
   var argc: int
-
-  let selfPtr = prototype.getSelfPtr(false)
-  let selfType = prototype.getSelfType().strVal()
-  let resultPtr = prototype.getFuncResultPtr()
   let args = prototype.genArgsList(addr argc, true)
-  let varArgs = prototype.getVarArgs()
 
-  let methodName = prototype.getNameFromProto()
+  var s = prototype.resolveSelf
 
-  # Varargs-Call (convert all params to Variant and go)
-  # object_method_bind_call(
-  #   GDExtensionMethodBindPtr p_method_bind,
-  #   GDExtensionObjectPtr p_instance,
-  #   const GDExtensionConstVariantPtr *p_args,
-  #   GDExtensionInt p_arg_count,
-  #   GDExtensionVariantPtr r_ret,
-  #   GDExtensionCallError *r_error
-  #
-  # Normal method call
-  # object_method_bind_ptrcall(
-  #   GDExtensionMethodBindPtr p_method_bind,
-  #   GDExtensionObjectPtr p_instance,
-  #   const GDExtensionConstTypePtr *p_args,
-  #   GDExtensionTypePtr r_ret);
+  let selfPtr = if s.isStatic:
+    newNilLit()
+  elif s.isRefCountWrapper:
+    newDotExpr(newTree(nnkBracketExpr, s.binding), "opaque".ident())
+  else:
+    newDotExpr(s.binding, "opaque".ident())
 
   result = prototype
+  result[^1] = genAst(
+      selfType = s.reduceType,
+      selfPtr,
+      resultPtr = prototype.getFuncResultPtr(),
+      methodName = prototype.getNameFromProto(),
+      hash, argc, args):
 
-  if varArgs.isNone():
-    result[^1] = quote do:
-      var p {.global.} = block:
-        var gdClassName = `selfType`.toGodotStringName()
-        var gdMethName = `methodName`.toGodotStringName()
+    var p {.global.} = getClassMethodBindPtr($selfType, methodName, hash)
+    var fixedArgs: array[argc, GDExtensionConstTypePtr] = args
 
-        # defer and try-finally result in bad codegen here
-        let r = gdInterfacePtr.classdb_get_method_bind(addr gdClassName, addr gdMethName, `hash`)
+    gdInterfacePtr.object_method_bind_ptrcall(
+      p,
+      cast[GDExtensionObjectPtr](selfPtr),
+      cast[ptr GDExtensionConstTypePtr](addr fixedArgs),
+      cast[GDExtensionTypePtr](resultPtr))
 
-        destroyStringName gdMethName
-        destroyStringName gdClassName
+template constructResultObject[T](dest: typedesc[Ref[T]]; raw: T): Ref[T] =
+  newRefShallow(raw)
 
-        r
+template constructResultObject[T](dest: typedesc[T]; raw: T): T =
+  raw
 
-      var argPtrs: array[`argc`, GDExtensionConstTypePtr] = `args`
+macro gd_class_method_obj*(hash: static[int64]; prototype: untyped) =
+  var argc: int
+  let args = prototype.genArgsList(addr argc, true)
 
-      gdInterfacePtr.object_method_bind_ptrcall(
-        p,
-        cast[GDExtensionObjectPtr](`selfPtr`),
-        cast[ptr GDExtensionConstTypePtr](addr argPtrs),
-        cast[GDExtensionTypePtr](`resultPtr`))
+  var isRefc = false
 
+  let fullRetType = prototype[3][0]
+  let retType = if prototype[3][0].kind == nnkBracketExpr and
+      prototype[3][0][0].strVal == "Ref":
+    isRefc = true
+    prototype[3][0][1]
   else:
-    result[^1] = quote do:
-      discard
+    prototype[3][0]
+
+  result = prototype
+  result[^1] = genAst(
+      selfType = prototype.getSelfType(),
+      selfPtr = prototype.getSelfPtr(false),
+      methodName = prototype.getNameFromProto(),
+      retType,
+      fullRetType,
+      hash,
+      argc,
+      args):
+    var p {.global.} = getClassMethodBindPtr($selfType, methodName, hash)
+    var fixedArgs: array[argc, GDExtensionConstTypePtr] = args
+
+    var resultPtr: pointer = nil
+
+    gdInterfacePtr.object_method_bind_ptrcall(
+      p,
+      cast[GDExtensionObjectPtr](selfPtr),
+      cast[ptr GDExtensionConstTypePtr](addr fixedArgs),
+      addr resultPtr)
+
+    let instancePtr = cast[retType](gdInterfacePtr.object_get_instance_binding(
+      resultPtr,
+      gdTokenPtr,
+      retType.gdInstanceBindingCallbacks))
+
+    constructResultObject(fullRetType, instancePtr)
 
 macro gd_builtin_get*(ty: typed; prototype: untyped) =
   let propertyName = prototype.getNameFromProto()

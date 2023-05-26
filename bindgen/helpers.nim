@@ -2,10 +2,10 @@ import std/[options, enumerate, strutils, strformat, sets, tables, sugar]
 
 import ./api
 
+var apiDef*: Api
+
 import ./gdtype
 export gdtype
-
-var apiDef*: Api
 
 func typeId(name: string): int =
   case name
@@ -100,6 +100,7 @@ func isReservedWord*(ident: string): bool =
 type
   DependencyHint* = enum
     dhGlobalEnums
+    dhCoreClasses
 
   TypedEnum* = tuple
     class: Option[string]
@@ -169,6 +170,9 @@ func render*(t: GodotType): string =
     else:
       result = te.enumName
 
+  if tfRefType in t.flags:
+    result = "Ref[" & result & "]"
+
   if tfVarType in t.flags:
     result = "var " & result
   elif tfPtrType in t.flags:
@@ -184,6 +188,9 @@ func innerDependencies*(t: GodotType; hints: var set[DependencyHint]): OrderedSe
   result = initOrderedSet[string]()
 
   let rt = t.metaType.get(t.rawType)
+
+  if tfRefType in t.flags:
+    hints.incl dhCoreClasses
 
   if rt.startsWith("enum::") or rt.startsWith("bitfield::"):
     # enums and bitfields are the same for our purposes
@@ -254,6 +261,8 @@ proc isOpaque*(class: BuiltinClassDefinition): bool =
 
   return true
 
+proc isClassType*(name: string): bool =
+  name in apiDef.classTypes
 
 func isSimpleType*(k: ConstantDefinition): bool =
   k.type.isNativeClass()
@@ -344,6 +353,9 @@ proc referencedTypes*(
   when def is BuiltinClassDefinition or def is ClassDefinition:
     if roMethods in opt:
       for meth in def.methods.get(@[]):
+        if not meth.is_static:
+          topLevel.incl fromSelf(def)
+
         when def is BuiltinClassDefinition:
           if meth.return_type.isSome():
             topLevel.incl meth.return_type.unsafeGet().fromReturn(def)
@@ -521,6 +533,8 @@ proc renderImportList*(
   if enumPath.isSome():
     if dhGlobalEnums in outHints:      result &= "import " & enumPath.get() & "\n"
 
+  if dhCoreClasses in outHints:        result &= "import ../ref_helper\n"
+
   if nativesPath.isSome():
     if len(sorted.native_structs) > 0: result &= "import " & nativesPath.get() & "\n"
 
@@ -625,9 +639,13 @@ proc render*(meth: ClassMethodDefinition, def: ClassDefinition | BuiltinClassDef
   let selfType = fromSelf(def)
 
   if meth.is_static:
-    args &= (bindings: @["_"], `type`: selfType.asTypeDesc())
+    var tmp = selfType
+
+    tmp.flags.excl tfRefType
+
+    args &= (bindings: @["_"], `type`: tmp.asTypeDesc())
   else:
-    if meth.is_const and def isnot ClassDefinition:
+    if meth.is_const or def is ClassDefinition:
       args &= (bindings: @["self"], `type`: selfType)
     else:
       args &= (bindings: @["self"], `type`: selfType.asVarType())

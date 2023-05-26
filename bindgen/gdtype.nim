@@ -1,6 +1,7 @@
-import std/[options, strutils]
+import std/[options, strutils, tables]
 
 import ./api
+import ./helpers
 
 type
   GodotTypeKind* = enum
@@ -17,6 +18,7 @@ type
   GodotTypeFlag* = enum
     tfVarType,
     tfPtrType,
+    tfRefType,
     tfTypeDesc
 
   GodotType* = object
@@ -37,21 +39,11 @@ func asTypeDesc*(t: GodotType): GodotType =
   result = t
   result.flags.incl tfTypeDesc
 
-func fromSelf*(def: BuiltinClassDefinition | ClassDefinition | EnumDefiniton): GodotType =
-  GodotType(
-    dependant: none string,
-    kind: if def is ClassDefinition:
-      tkClassDef
-    elif def is BuiltinClassDefinition:
-      tkBuiltinClassDef
-    else:
-      tkEnumDef,
-
-    rawType: def.name,
-    metaType: none string)
-
-func cleanType(t: GodotType): GodotType =
+proc cleanType(t: GodotType): GodotType =
   result = t
+
+  if t.rawType in apiDef.classTypes and apiDef.classTypes[t.rawType].isRefcounted:
+    result.flags.incl tfRefType
 
   # Some special cases.
   if t.rawType == "const void*" or t.rawType == "void*":
@@ -71,37 +63,51 @@ func cleanType(t: GodotType): GodotType =
     # Cannot model "const T*", so we model it to "ptr T"
     result.rawType = result.rawType[6..^1]
 
-func fromConst*(k: ConstantDefinition; def: BuiltinClassDefinition | ClassDefinition): GodotType =
+proc fromSelf*(def: BuiltinClassDefinition | ClassDefinition | EnumDefiniton): GodotType =
+  cleanType GodotType(
+    dependant: none string,
+    kind: if def is ClassDefinition:
+      tkClassDef
+    elif def is BuiltinClassDefinition:
+      tkBuiltinClassDef
+    else:
+      tkEnumDef,
+
+    rawType: def.name,
+    metaType: none string)
+
+proc fromConst*(k: ConstantDefinition; def: BuiltinClassDefinition | ClassDefinition): GodotType =
   cleanType GodotType(dependant: some def.name, kind: tkOther, rawType: k.`type`, metaType: none string)
 
-func fromField*(field: MemberOffset; def: BuiltinClassDefinition): GodotType =
+proc fromField*(field: MemberOffset; def: BuiltinClassDefinition): GodotType =
   cleanType GodotType(dependant: some def.name, kind: tkField, rawType: field.meta, metaType: none string)
 
-func fromProperty*(prop: PropertyDefinition; def: BuiltinClassDefinition): GodotType =
+proc fromProperty*(prop: PropertyDefinition; def: BuiltinClassDefinition): GodotType =
   cleanType GodotType(dependant: some def.name, kind: tkOther, rawType: prop.`type`, metaType: none string)
 
-func fromVarious*(t: string; def: BuiltinClassDefinition): GodotType =
+proc fromVarious*(t: string; def: BuiltinClassDefinition): GodotType =
   cleanType GodotType(dependant: some def.name, kind: tkOther, rawType: t, metaType: none string)
 
-func fromParameter*(arg: FunctionArgument; def: ClassDefinition | BuiltinClassDefinition): GodotType =
-  cleanType GodotType(dependant: some def.name, kind: tkOther, rawType: arg.`type`, metaType: arg.meta)
+proc fromParameter*(arg: FunctionArgument; def: ClassDefinition | BuiltinClassDefinition): GodotType =
+  result = cleanType GodotType(dependant: some def.name, kind: tkOther, rawType: arg.`type`, metaType: arg.meta)
 
-func fromParameter*(arg: FunctionArgument; def: FunctionDefinition): GodotType =
+proc fromParameter*(arg: FunctionArgument; def: FunctionDefinition): GodotType =
   cleanType GodotType(dependant: none string, kind: tkOther, rawType: arg.`type`, metaType: arg.meta)
 
-func fromReturn*(ret: string; def: BuiltinClassDefinition | FunctionDefinition): GodotType =
+proc fromReturn*(ret: string; def: BuiltinClassDefinition | FunctionDefinition): GodotType =
   let dep = if def is MethodDefinition:
       some def.name
     else:
       none string
 
-  cleanType GodotType(
+  result = cleanType GodotType(
     dependant: dep,
     kind: tkOther,
     rawType: ret,
     metaType: none string)
 
-func fromReturn*(ret: ClassMethodReturn; def: ClassDefinition | BuiltinClassDefinition): GodotType =
+
+proc fromReturn*(ret: ClassMethodReturn; def: ClassDefinition | BuiltinClassDefinition): GodotType =
   cleanType GodotType(dependant: some def.name, kind: tkOther, rawType: ret.`type`, metaType: ret.meta)
 
 
@@ -127,7 +133,7 @@ func parseCtype*(raw: string; ident: var string; outType: var GodotType) =
 
     outType.dimensionality = some dim
 
-func makeVarArgsParam*(def: ClassDefinition | BuiltinClassDefinition | FunctionDefinition): GodotType =
+proc makeVarArgsParam*(def: ClassDefinition | BuiltinClassDefinition | FunctionDefinition): GodotType =
   let dep = when compiles(def.name):
     some def.name
   else:

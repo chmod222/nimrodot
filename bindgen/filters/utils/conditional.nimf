@@ -2,7 +2,7 @@
 #
 #import std/[enumerate, tables, sequtils]
 #
-#func generateConditional*[T](grouped: OrderedTable[T, seq[string]], callable: proc(v: T): string {.noSideEffect.}): string =
+#proc generateConditional*[T](grouped: OrderedTable[T, seq[string]], callable: proc(v: T): string): string =
 #  result = ""
 #
 #  for i, (thing, cfgs) in enumerate(pairs(grouped)):

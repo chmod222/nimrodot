@@ -9,7 +9,10 @@ var gdTokenPtr*: GDExtensionClassLibraryPtr = nil
 
 
 import nodot/helpers
+import nodot/ref_helper
 import nodot/classes/types/"object"
+
+export ref_helper
 export ffi
 
 proc getSingleton*[T: Object](name: string): T =

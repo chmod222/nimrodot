@@ -35,6 +35,8 @@ proc newVariant*[T](`from`: T): Variant =
 
   fromType(addr result, unsafeAddr `from`)
 
+template `%`*(p: typed): Variant = p.newVariant()
+
 proc destroy*(self: sink Variant) =
   gdInterfacePtr.variant_destroy(unsafeAddr self)
 

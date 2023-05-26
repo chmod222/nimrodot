@@ -176,6 +176,7 @@ type
 
     nativeStructTypes*: HashSet[string]
     builtinClassTypes*: HashSet[string]
+    classTypes*: Table[string, ClassDefinition]
 
     typeDeps*: Table[string, OrderedSet[string]]
 
@@ -204,6 +205,9 @@ proc fill_caches(api: var Api) =
 
   api.builtinClassTypes.incl "Variant"
   api.builtinClassTypes.incl "TypedArray"
+
+  for class in api.classes:
+    api.classTypes[class.name] = class
 
 proc importApi*(path: string): Api =
   let dump = fromJson(readFile(path), ApiDump)

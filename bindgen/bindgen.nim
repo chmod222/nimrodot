@@ -1,4 +1,4 @@
-import std/os
+import std/[os, options, sets]
 
 import ./api
 import ./helpers
@@ -71,7 +71,36 @@ when isMainModule:
         sourceRoot / "builtins" / builtinClass.moduleName() & ".nim",
         builtinProcGen.generate(builtinClass))
 
-  for class in apiFile.classes:
+  # We want to generate the classes in the correct topological order as
+  # determined by inheritance, starting at "Object"
+  var remainingClasses = apiFile.classes
+
+  var sortedClasses = newSeq[ClassDefinition]()
+  var openParentClasses = newSeq[ClassDefinition]()
+  var resolved = initHashSet[string]()
+
+  # Need object first
+  for cls in apiFile.classes:
+    if cls.inherits.isNone:
+      openParentClasses &= cls
+      resolved.incl cls.name
+
+      break
+
+  while len(openParentClasses) > 0:
+    sortedClasses &= openParentClasses.pop()
+
+    let parentName = sortedClasses[^1].name
+
+    for cls in remainingClasses:
+      if cls.name notin resolved and
+          cls.inherits.isSome() and
+          cls.inherits.unsafeGet() == parentName:
+
+        resolved.incl cls.name
+        openParentClasses &= cls
+
+  for class in sortedClasses:
     writeFile(
       sourceRoot / "classes" / "types" / class.moduleName() & ".nim",
       classTypeGen.generate(class))

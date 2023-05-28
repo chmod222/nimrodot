@@ -32,15 +32,3 @@ export $moduleName
 #  end for
 
 import ../classes/types/"object"
-
-func variantTypeId*(_: typedesc[bool]): GDExtensionVariantType =
-  GDEXTENSION_VARIANT_TYPE_BOOL
-
-func variantTypeId*(_: typedesc[int64]): GDExtensionVariantType =
-  GDEXTENSION_VARIANT_TYPE_INT
-
-func variantTypeId*(_: typedesc[float64]): GDExtensionVariantType =
-  GDEXTENSION_VARIANT_TYPE_FLOAT
-
-func variantTypeId*(_: typedesc[Object]): GDExtensionVariantType =
-  GDEXTENSION_VARIANT_TYPE_OBJECT

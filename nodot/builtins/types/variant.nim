@@ -59,3 +59,17 @@ type
 
 func variantTypeId*(_: typedesc[Variant]): GDExtensionVariantType =
   GDEXTENSION_VARIANT_TYPE_NIL
+
+func variantTypeId*(_: typedesc[SomeInteger]): GDExtensionVariantType =
+  GDEXTENSION_VARIANT_TYPE_INT
+
+func variantTypeId*(_: typedesc[SomeFloat]): GDExtensionVariantType =
+  GDEXTENSION_VARIANT_TYPE_FLOAT
+
+func variantTypeId*(_: typedesc[bool]): GDExtensionVariantType =
+  GDEXTENSION_VARIANT_TYPE_BOOL
+
+import ../../classes/types/"object"
+
+func variantTypeId*(_: typedesc[Object]): GDExtensionVariantType =
+  GDEXTENSION_VARIANT_TYPE_OBJECT

@@ -12,8 +12,11 @@ proc stringToStringName(str: String): StringName =
 
   ctor(cast[GDExtensionTypePtr](addr result), cast[ptr GDExtensionConstTypePtr](addr args))
 
+proc toGodotString*(native: string): String =
+  gdInterfacePtr.string_new_with_utf8_chars(addr result, cstring(native))
+
 proc toGodotStringName*(native: string): StringName =
-  var interm: String = default(String)
+  var interm = native.toGodotString()
 
   gdInterfacePtr.string_new_with_utf8_chars(addr interm, cstring(native))
   result = stringToStringName(interm)

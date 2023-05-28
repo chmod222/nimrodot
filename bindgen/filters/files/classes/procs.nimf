@@ -91,5 +91,5 @@ $getterProto = discard
 $setterProto = discard
 #      end if
 
-#    end
+#    end for
 #  end if

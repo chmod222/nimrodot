@@ -54,7 +54,7 @@ proc castRef*[T, U](r: sink Ref[T]; _: typedesc[U]): Ref[U] =
 
   # TBD: Cache these, since they never change for all possible U.
   var clsName = U.gdClassName()
-  var clsTag = gdInterfacePtr.classdb_get_class_tag(addr clsName)
+  var clsTag = gdInterfacePtr.classdb_get_class_tag(clsName)
 
   let castedPtr = gdInterfacePtr.object_cast_to(r.reference.opaque, clsTag)
 

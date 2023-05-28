@@ -37,7 +37,7 @@ var className: StringName = toGodotStringName("$def.name")
 proc gdInstanceBindingCallbacks*(_: typedesc[$def.name]): ptr GDExtensionInstanceBindingCallbacks =
   addr instanceBindingCallbacks
 
-proc gdClassName*(_: typedesc[$def.name]): StringName = className
+proc gdClassName*(_: typedesc[$def.name]): ptr StringName = addr className
 
 instanceBindingCallbacks = makeInstanceFunctions($def.name)
 #  for enu in def.enums.get(@[]):

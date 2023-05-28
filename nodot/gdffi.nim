@@ -130,6 +130,17 @@ func genArgsList(prototype: NimNode; argc: ptr int; ignoreFirst: bool = false): 
       result.add quote do:
         pointer(unsafeAddr `formalArg`)
 
+func getNameFromProto(proto: NimNode): string =
+  if proto[0].kind in {nnkIdent, nnkSym}:
+    # "funcname"
+    proto[0].strVal()
+  elif proto[0][1].kind in {nnkIdent, nnkSym}:
+    # "funcname*"
+    proto[0][1].strVal()
+  else:
+    # `quoted`
+    proto[0][1][0].strVal()
+
 # We need to put these into dedicated functions rather than `block:` statements due to
 # bad codegen with destructors present.
 proc getUtilityFunctionPtr(fun: static[string]; hash: static[int64]): GDExtensionPtrUtilityFunction =
@@ -148,8 +159,12 @@ proc getClassMethodBindPtr*(cls, meth: static[string]; hash: static[int64]): GDE
 
   gdInterfacePtr.classdb_get_method_bind(addr gdClassName, addr gdMethName, hash)
 
+
 macro gd_utility*(hash: static[int64]; prototype: untyped) =
-  let functionName = prototype[0][1].strVal()
+  ## Implement a Godot utility function based upon the given proc declaration's name
+  ## and a hash value derived from the API description.
+
+  let functionName = prototype.getNameFromProto()
 
   var argc: int
 
@@ -183,7 +198,12 @@ macro gd_utility*(hash: static[int64]; prototype: untyped) =
         cast[ptr GDExtensionConstTypePtr](addr argPtrs[0]),
         cint(`argc` + len(`varArgId`)))
 
+# Builtins (Variant)
+
 macro gd_builtin_ctor*(ty: typed; idx: static[int]; prototype: untyped) =
+  ## Implement a Godot builtin constructor for the given type and
+  ## constructor index.
+
   var argc: int
   let args = prototype.genArgsList(addr argc)
 
@@ -197,6 +217,8 @@ macro gd_builtin_ctor*(ty: typed; idx: static[int]; prototype: untyped) =
     p(addr result, cast[ptr GDExtensionConstTypePtr](addr argPtrs))
 
 macro gd_builtin_dtor*(ty: typed; prototype: untyped) =
+  ## Implement a Godot builtin destructor for the given type.
+
   let selfPtr = prototype.resolveSelf().reducePtr()
 
   result = prototype
@@ -206,18 +228,11 @@ macro gd_builtin_dtor*(ty: typed; prototype: untyped) =
 
     p(cast[GDExtensionTypePtr](`selfPtr`))
 
-func getNameFromProto(proto: NimNode): string =
-  if proto[0].kind in {nnkIdent, nnkSym}:
-    # "funcname"
-    proto[0].strVal()
-  elif proto[0][1].kind in {nnkIdent, nnkSym}:
-    # "funcname*"
-    proto[0][1].strVal()
-  else:
-    # `quoted`
-    proto[0][1][0].strVal()
 
 macro gd_builtin_method*(ty: typed; hash: static[int64]; prototype: untyped) =
+  ## Implement a Godot builtin method for the given type, based upon the
+  ## proc declaration's name and a hash value derived from the API description.
+
   let functionName = prototype.getNameFromProto()
 
   var argc: int
@@ -259,110 +274,6 @@ macro gd_builtin_method*(ty: typed; hash: static[int64]; prototype: untyped) =
         cast[ptr GDExtensionConstTypePtr](addr argPtrs[0]),
         cint(`argc` + len(`varArgId`)))
 
-macro gd_class_ctor*(prototype: untyped) =
-  let selfType = prototype.resolveReturn().reduceType()
-  let selfTypeStr = selfType.strVal()
-
-  result = prototype
-  result[^1] = quote do:
-    var name = `selfTypeStr`.toGodotStringName()
-
-    result.opaque = gdInterfacePtr.classdb_construct_object(addr name)
-
-macro gd_class_singleton*(prototype: untyped) =
-  let selfType = prototype.resolveReturn().reduceType()
-
-  result = prototype
-  result[^1] = quote do:
-    var name = `selfType`.gdClassName()
-
-    cast[`selfType`](gdInterfacePtr.object_get_instance_binding(
-      gdInterfacePtr.global_get_singleton(addr name),
-      gdTokenPtr,
-      `selfType`.gdInstanceBindingCallbacks))
-
-
-template constructResultObject[T](dest: typedesc[Ref[T]]; raw: T): Ref[T] =
-  newRefShallow(raw)
-
-template constructResultObject[T](dest: typedesc[T]; raw: T): T =
-  raw
-
-macro gd_class_method*(hash: static[int64]; prototype: untyped) =
-  var argc: int
-  let args = prototype.genArgsList(addr argc, true)
-
-  var s = prototype.resolveSelf()
-  var r = prototype.resolveReturn()
-
-  result = prototype
-  result[^1] = genAst(
-      selfType = s.reduceType(),
-      selfPtr = s.reducePtr(),
-      resultPtr = r.reducePtr(),
-      methodName = prototype.getNameFromProto(),
-      hash, argc, args):
-
-    var p {.global.} = getClassMethodBindPtr($selfType, methodName, hash)
-    var fixedArgs: array[argc, GDExtensionConstTypePtr] = args
-
-    gdInterfacePtr.object_method_bind_ptrcall(
-      p,
-      cast[GDExtensionObjectPtr](selfPtr),
-      cast[ptr GDExtensionConstTypePtr](addr fixedArgs),
-      cast[GDExtensionTypePtr](resultPtr))
-
-macro gd_class_method_obj*(hash: static[int64]; prototype: untyped) =
-  var argc: int
-  let args = prototype.genArgsList(addr argc, true)
-
-  var s = prototype.resolveSelf()
-  var r = prototype.resolveReturn()
-
-  result = prototype
-  result[^1] = genAst(
-      selfType = s.reduceType(),
-      selfPtr = s.reducePtr(),
-      methodName = prototype.getNameFromProto(),
-      retType = r.reduceType(),
-      fullRetType = r.fullType,
-      hash, argc, args):
-
-    var p {.global.} = getClassMethodBindPtr($selfType, methodName, hash)
-    var fixedArgs: array[argc, GDExtensionConstTypePtr] = args
-
-    var resultPtr: pointer = nil
-
-    gdInterfacePtr.object_method_bind_ptrcall(
-      p,
-      cast[GDExtensionObjectPtr](selfPtr),
-      cast[ptr GDExtensionConstTypePtr](addr fixedArgs),
-      addr resultPtr)
-
-    let instancePtr = cast[retType](gdInterfacePtr.object_get_instance_binding(
-      resultPtr,
-      gdTokenPtr,
-      retType.gdInstanceBindingCallbacks))
-
-    constructResultObject(fullRetType, instancePtr)
-
-macro gd_builtin_get*(ty: typed; prototype: untyped) =
-  let propertyName = prototype.getNameFromProto()
-
-  let selfPtr = prototype.resolveSelf().reduceAddr()
-  let resultPtr = prototype.resolveReturn().reducePtr()
-
-  result = prototype
-  result[^1] = genAst(propertyName, ty, selfPtr, resultPtr):
-    var p {.global.} = block:
-      var gdFuncName = propertyName.toGodotStringName()
-
-      gdInterfacePtr.variant_get_ptr_getter(ty.variantTypeId, addr gdFuncName)
-
-    p(
-      cast[GDExtensionConstTypePtr](selfPtr),
-      cast[GDExtensionTypePtr](resultPtr))
-
 macro gd_builtin_set*(ty: typed; prototype: untyped) =
   let propertyName = prototype[0][1][0].strVal()
 
@@ -394,7 +305,6 @@ func indexParams(proto: NimNode; setter: bool; fn, idxType, idxNode: ptr NimNode
     fn[] = (if setter: "variant_get_ptr_indexed_setter" else: "variant_get_ptr_indexed_getter").ident()
     idxType[] = "GDExtensionInt".bindSym()
     idxNode[] = idx
-
 
 macro gd_builtin_index_get*(ty: typed; prototype: untyped) =
   var fn: NimNode
@@ -487,6 +397,114 @@ macro gd_builtin_operator*(ty: typed; prototype: untyped) =
         `rhsTyp`.variantTypeId)
 
     p(`lhsPtr`, `rhsPtr`, addr result)
+
+
+# Classes
+
+macro gd_class_ctor*(prototype: untyped) =
+  let selfType = prototype.resolveReturn().reduceType()
+  let selfTypeStr = selfType.strVal()
+
+  result = prototype
+  result[^1] = quote do:
+    var name = `selfTypeStr`.toGodotStringName()
+
+    result.opaque = gdInterfacePtr.classdb_construct_object(addr name)
+
+macro gd_class_singleton*(prototype: untyped) =
+  let selfType = prototype.resolveReturn().reduceType()
+
+  result = prototype
+  result[^1] = quote do:
+    var name = `selfType`.gdClassName()
+
+    cast[`selfType`](gdInterfacePtr.object_get_instance_binding(
+      gdInterfacePtr.global_get_singleton(addr name),
+      gdTokenPtr,
+      `selfType`.gdInstanceBindingCallbacks))
+
+template constructResultObject[T](dest: typedesc[Ref[T]]; raw: T): Ref[T] =
+  newRefShallow(raw)
+
+template constructResultObject[T](dest: typedesc[T]; raw: T): T =
+  raw
+
+macro gd_class_method*(hash: static[int64]; prototype: untyped) =
+  var argc: int
+  let args = prototype.genArgsList(addr argc, true)
+
+  var s = prototype.resolveSelf()
+  var r = prototype.resolveReturn()
+
+  result = prototype
+  result[^1] = genAst(
+      selfType = s.reduceType(),
+      selfPtr = s.reducePtr(),
+      resultPtr = r.reducePtr(),
+      methodName = prototype.getNameFromProto(),
+      hash, argc, args):
+
+    var p {.global.} = getClassMethodBindPtr($selfType, methodName, hash)
+    var fixedArgs: array[argc, GDExtensionConstTypePtr] = args
+
+    gdInterfacePtr.object_method_bind_ptrcall(
+      p,
+      cast[GDExtensionObjectPtr](selfPtr),
+      cast[ptr GDExtensionConstTypePtr](addr fixedArgs),
+      cast[GDExtensionTypePtr](resultPtr))
+
+macro gd_class_method_obj*(hash: static[int64]; prototype: untyped) =
+  var argc: int
+  let args = prototype.genArgsList(addr argc, true)
+
+  var s = prototype.resolveSelf()
+  var r = prototype.resolveReturn()
+
+  result = prototype
+  result[^1] = genAst(
+      selfType = s.reduceType(),
+      selfPtr = s.reducePtr(),
+      methodName = prototype.getNameFromProto(),
+      retType = r.reduceType(),
+      fullRetType = r.fullType,
+      hash, argc, args):
+
+    var p {.global.} = getClassMethodBindPtr($selfType, methodName, hash)
+    var fixedArgs: array[argc, GDExtensionConstTypePtr] = args
+
+    var resultPtr: pointer = nil
+
+    gdInterfacePtr.object_method_bind_ptrcall(
+      p,
+      cast[GDExtensionObjectPtr](selfPtr),
+      cast[ptr GDExtensionConstTypePtr](addr fixedArgs),
+      addr resultPtr)
+
+    let instancePtr = cast[retType](gdInterfacePtr.object_get_instance_binding(
+      resultPtr,
+      gdTokenPtr,
+      retType.gdInstanceBindingCallbacks))
+
+    constructResultObject(fullRetType, instancePtr)
+
+macro gd_builtin_get*(ty: typed; prototype: untyped) =
+  let propertyName = prototype.getNameFromProto()
+
+  let selfPtr = prototype.resolveSelf().reduceAddr()
+  let resultPtr = prototype.resolveReturn().reducePtr()
+
+  result = prototype
+  result[^1] = genAst(propertyName, ty, selfPtr, resultPtr):
+    var p {.global.} = block:
+      var gdFuncName = propertyName.toGodotStringName()
+
+      gdInterfacePtr.variant_get_ptr_getter(ty.variantTypeId, addr gdFuncName)
+
+    p(
+      cast[GDExtensionConstTypePtr](selfPtr),
+      cast[GDExtensionTypePtr](resultPtr))
+
+# Constants
 
 proc gd_constant*[K, T](name: static[string]): T =
   var gdName = toGodotStringName(name)

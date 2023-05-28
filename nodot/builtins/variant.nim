@@ -52,7 +52,7 @@ proc raiseMeMaybe(callError: GDExtensionCallError) =
   if callError.error != GDEXTENSION_CALL_OK:
     var exc = newException(VariantCallException, "error during variant call")
 
-    exc.code = cast[CallErrorType](callError.error)
+    exc.code = CallErrorType(ord(callError.error))
     exc.argument = callError.argument
     exc.expected = cast[Type](callError.expected)
 
@@ -243,8 +243,8 @@ proc duplicate*(self: Variant; deep: bool = true): Variant =
     cast[GDExtensionBool](deep))
 
 proc getType*(self: Variant): Type =
-  cast[Type](gdInterfacePtr.variant_get_type(
-    cast[GDExtensionConstVariantPtr](unsafeAddr self)))
+  Type(int(gdInterfacePtr.variant_get_type(
+    cast[GDExtensionConstVariantPtr](unsafeAddr self))))
 
 proc hasMethod*(self: Variant; meth: string): bool =
   var methodName = toGodotStringName(meth)

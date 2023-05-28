@@ -74,11 +74,11 @@ import gdffi
 # Re-declare these so we don't have to cyclic import refcounted.nim.
 # XXX: KEEP IN SYNC.
 # XXX2: These need to be exported for now for some reason. TODO: investigate why that is.
-proc reference*[T](self: var Ref[T]): bool {.gd_class_method(2240911060).}
-proc unreference*[T](self: var Ref[T]): bool {.gd_class_method(2240911060).}
+proc reference*[T](self: T): bool {.gd_class_method(2240911060).}
+proc unreference*[T](self: T): bool {.gd_class_method(2240911060).}
 
 proc upRef[T](self: var Ref[T]) =
-  discard self.reference()
+  discard self.reference.reference()
 
 proc downRef[T](self: var Ref[T]): bool =
-  self.unreference()
+  self.reference.unreference()

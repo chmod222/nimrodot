@@ -15,6 +15,7 @@ type
     ctorFuncIdent: NimNode
     dtorFuncIdent: NimNode
     notificationHandlerIdent: NimNode
+    revertQueryIdent: NimNode
 
     properties: OrderedTable[string, ClassProperty]
     methods: OrderedTable[string, MethodInfo]
@@ -184,6 +185,25 @@ macro property*(def: typed) =
 
   def
 
+macro revertQuery*(def: typed) =
+  def.expectKind(nnkProcDef)
+
+  def[0].expectKind(nnkSym)
+  def[3].expectLen(3)
+
+  def[3][0][0].expectIdent("Option")
+  def[3][0][1].expectIdent("Variant")
+
+  def[3][1][1].expectKind(nnkVarTy)
+
+  def[3][2][1].expectIdent("StringName")
+
+  let classType = def[3][1][1][0]
+
+  classes[classType.strVal()].revertQueryIdent = def[0]
+
+  def
+
 proc classEnumImpl(T: NimNode; isBitfield: bool; def: NimNode): NimNode =
   def.expectKind(nnkTypeDef)
   def[2].expectKind(nnkEnumTy)
@@ -252,6 +272,7 @@ type
   DestructorFunc[T] = proc(obj: var T)
 
   NotificationHandlerFunc[T] = proc(obj: var T; what: int)
+  RevertQueryFunc[T] = proc(obj: var T; propertyName: StringName): Option[Variant]
 
   #PropertyGetterFunc[T] = proc(obj: var T): Variant
   #PropertySetterFunc[T] = proc(obj: var T; value: Variant)
@@ -263,6 +284,7 @@ type
     dtor: DestructorFunc[T]
 
     notifierFunc: NotificationHandlerFunc[T]
+    revertFunc: RevertQueryFunc[T]
 
 proc create_instance[T, P](userdata: pointer): pointer {.cdecl.} =
   var nimInst = cast[ptr T](gdInterfacePtr.mem_alloc(sizeof(T).csize_t))
@@ -322,11 +344,43 @@ proc instance_virt_query[T](instance: GDExtensionClassInstancePtr;
 
   nil
 
+proc can_property_revert[T](instance: GDExtensionClassInstancePtr;
+                            name: GDExtensionConstStringNamePtr): GDExtensionBool {.cdecl.} =
+  var nimInst = cast[ptr T](instance)
+  var prop = cast[ptr StringName](name)
+  let regInst = cast[ptr RuntimeClassRegistration[T]](nimInst.gdclassinfo)
+
+  if regInst.revertFunc.isNil():
+    return 0
+
+  GDExtensionBool(regInst.revertFunc(nimInst[], prop[]).isSome())
+
+proc property_revert[T](instance: GDExtensionClassInstancePtr;
+                        name: GDExtensionConstStringNamePtr;
+                        ret: GDExtensionVariantPtr): GDExtensionBool {.cdecl.} =
+  var nimInst = cast[ptr T](instance)
+  var prop = cast[ptr StringName](name)
+  var retPtr = cast[ptr Variant](ret)
+  let regInst = cast[ptr RuntimeClassRegistration[T]](nimInst.gdclassinfo)
+
+  if regInst.revertFunc.isNil():
+    return 0
+
+  let revertValue = regInst.revertFunc(nimInst[], prop[])
+
+  if revertValue.isNone():
+    return 0
+
+  retPtr[] = revertValue.unsafeGet()
+
+  return 1
+
 proc registerClass*[T, P](
     lastNative: StringName,
     ctorFunc: ConstructorFunc[T];
     dtorFunc: DestructorFunc[T];
     notification: NotificationHandlerFunc[T];
+    revertQuery: RevertQueryFunc[T];
     abstract, virtual: bool = false) =
 
   var className: StringName = $T
@@ -337,7 +391,8 @@ proc registerClass*[T, P](
     ctor: ctorFunc,
     dtor: dtorFunc,
     notifierFunc: notification,
-    lastGodotAncestor: lastNative
+    lastGodotAncestor: lastNative,
+    revertFunc: revertQuery,
   )
 
   var creationInfo = GDExtensionClassCreationInfo(
@@ -350,8 +405,8 @@ proc registerClass*[T, P](
     get_property_list_func: nil, #list_properties[T],
     free_property_list_func: nil, #free_properties[T],
 
-    property_can_revert_func: nil, #can_property_revert[T],
-    property_get_revert_func: nil, #property_revert[T],
+    property_can_revert_func: can_property_revert[T],
+    property_get_revert_func: property_revert[T],
 
     notification_func: instance_notification[T],
     to_string_func: instance_to_string[T],
@@ -605,10 +660,18 @@ macro register*() =
         ctor = regInfo.ctorFuncIdent,
         dtor = regInfo.dtorFuncIdent,
         notification = regInfo.notificationHandlerIdent,
+        revertQuery = regInfo.revertQueryIdent,
         isAbstract = regInfo.abstract,
         isVirtual = regInfo.virtual):
 
-      registerClass[T, P](lastAncestor, ctor, dtor, notification, isAbstract, isVirtual)
+      registerClass[T, P](
+        lastAncestor,
+        ctor,
+        dtor,
+        notification,
+        revertQuery,
+        isAbstract,
+        isVirtual)
 
     result.add(classReg)
 

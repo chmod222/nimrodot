@@ -2,7 +2,7 @@ import ../nodot
 import ./builtins/types/[variant, stringname]
 import ./enums
 
-import std/[macros, genasts, tables, strutils, options, enumutils, typetraits]
+import std/[macros, genasts, tables, strutils, options, enumutils, typetraits, sugar]
 
 type
   ClassRegistration = object
@@ -24,6 +24,11 @@ type
 
   MethodInfo = object
     symbol: NimNode
+    defaultValues: seq[DefaultedArgument]
+
+  DefaultedArgument = object
+    binding: NimNode
+    default: NimNode
 
   EnumInfo = object
     definition: NimNode
@@ -104,9 +109,21 @@ macro dtor*(def: typed) =
 macro classMethod*(def: typed) =
   def.expectPossiblyStaticClassReceiverProc()
 
-  # TODO: Capture default arguments here, as they are lost below
+  var defaults: seq[DefaultedArgument] = @[]
+
+  if len(def[3]) > 1:
+    for identDef in def[3][2..^1]:
+      if identDef[^1].kind == nnkEmpty:
+        continue
+
+      for binding in identDef[0..^3]:
+        defaults &= DefaultedArgument(
+          binding: binding,
+          default: identDef[^1])
+
   classes[def.className].methods[def[0].strVal()] = MethodInfo(
-    symbol: def[0]
+    symbol: def[0],
+    defaultValues: defaults
   )
 
   def
@@ -433,7 +450,7 @@ macro getParameterMetaInfo(m: typed): auto =
   genAst(args):
     args
 
-proc registerMethod*[T, M: proc](name: string; callable: static[M]) =
+proc registerMethod*[T, M: proc](name: string; callable: static[M]; defaults: auto) =
   var className: StringName = $T
   var methodName: StringName = name
 
@@ -453,6 +470,16 @@ proc registerMethod*[T, M: proc](name: string; callable: static[M]) =
   var argsMeta: array[argc, GDExtensionClassMethodArgumentMetadata] =
     callable.getParameterMetaInfo()
 
+  var defaultVariants = newSeq[Variant]()
+
+  # fieldPairs() doesn't play well with collect(), so we can't be fancy here
+  for param, default in defaults.fieldPairs():
+    defaultVariants &= %default
+
+  var defaultVariantPtrs = collect(newSeqOfCap(len(defaultVariants))):
+    for i in 0..len(defaultVariants):
+      cast[ptr GDExtensionVariantPtr](addr defaultVariants[i])
+
   var methodInfo = GDExtensionClassMethodInfo(
     name: addr methodName,
     method_userdata: nil,
@@ -469,8 +496,11 @@ proc registerMethod*[T, M: proc](name: string; callable: static[M]) =
     arguments_info: cast[ptr GDExtensionPropertyInfo](addr args),
     arguments_metadata: cast[ptr GDExtensionClassMethodArgumentMetadata](addr argsMeta),
 
-    default_argument_count: 0,
-    default_arguments: nil, # array[default_argument_count, GDExtensionVariantPtr]
+    default_argument_count: uint32(len(defaultVariantPtrs)),
+    default_arguments: if len(defaultVariantPtrs) > 0:
+      cast[ptr GDExtensionVariantPtr](addr defaultVariantPtrs[0])
+    else:
+      nil,
   )
 
   gdInterfacePtr.classdb_register_extension_class_method(
@@ -498,6 +528,14 @@ proc registerClassEnum*[T, E: enum](t: typedesc[E]; isBitfield: bool = false) =
       addr fieldName,
       GDExtensionInt(ord(value)),
       GDExtensionBool(isBitfield))
+
+proc generateDefaultsTuple(mi: MethodInfo): NimNode =
+  result = newTree(nnkTupleConstr)
+
+  for default in mi.defaultValues:
+    result &= newTree(nnkExprColonExpr,
+      default.binding,
+      default.default)
 
 macro register*() =
   result = newStmtList()
@@ -531,8 +569,9 @@ macro register*() =
           T = regInfo.typeNode,
           methodName,
           methodType,
-          methodSymbol = methodInfo.symbol):
-        registerMethod[T, methodType](methodName, methodSymbol)
+          methodSymbol = methodInfo.symbol,
+          defaultArgs = methodInfo.generateDefaultsTuple):
+        registerMethod[T, methodType](methodName, methodSymbol, defaultArgs)
 
       result.add(methodReg)
 

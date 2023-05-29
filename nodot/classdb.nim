@@ -58,8 +58,25 @@ template expectClassReceiverProc(def: typed) =
   def[3][1][^2].expectKind(nnkVarTy)
   def[3][1][^2][0].expectKind(nnkSym)
 
+template expectPossiblyStaticClassReceiverProc(def: typed) =
+  ## Helper function to assert that a proc definition with `x: var T` or `_: typedesc[T]`
+  ## as the first parameter has been provided.
+  def.expectKind(nnkProcDef)
+  def[3][1][^2].expectKind({nnkVarTy, nnkBracketExpr})
+
+  if def[3][1][^2].kind == nnkVarTy:
+    # x: var T
+    def[3][1][^2][0].expectKind(nnkSym)
+  else:
+    # _: typedesc[T]
+    def[3][1][^2][0].expectIdent("typedesc")
+    def[3][1][^2][1].expectKind(nnkSym)
+
 template className(def: typed): string =
-  def[3][1][^2][0].strVal()
+  if def[3][1][^2].kind == nnkVarTy:
+    def[3][1][^2][0].strVal()
+  else:
+    def[3][1][^2][1].strVal()
 
 macro ctor*(def: typed) =
   def.expectClassReceiverProc()
@@ -76,7 +93,7 @@ macro dtor*(def: typed) =
   def
 
 macro classMethod*(def: typed) =
-  def.expectClassReceiverProc()
+  def.expectPossiblyStaticClassReceiverProc()
 
   # TODO: Capture default arguments here, as they are lost below
   classes[def.className].methods[def[0].strVal()] = MethodInfo(
@@ -148,6 +165,7 @@ func typeMetaData(_: typedesc[uint64]): auto = GDEXTENSION_METHOD_ARGUMENT_METAD
 func typeMetaData(_: typedesc[float32]): auto = GDEXTENSION_METHOD_ARGUMENT_METADATA_REAL_IS_FLOAT
 func typeMetaData(_: typedesc[float64 | float]): auto = GDEXTENSION_METHOD_ARGUMENT_METADATA_REAL_IS_DOUBLE
 
+func variantTypeId[T](_: typedesc[varargs[T]]): auto = GDEXTENSION_VARIANT_TYPE_NIL
 
 proc create_callback(token, instance: pointer): pointer {.cdecl.} = nil
 proc free_callback(token, instance, binding: pointer) {.cdecl.} = discard
@@ -309,9 +327,24 @@ macro getReturnInfo(m: typed): Option[ReturnValueInfo] =
       returnMeta: typeMetaData(typeOf R))
 
 macro getMethodFlags(m: typed): static[set[GDExtensionClassMethodFlags]] =
-  # TODO
-  genAst:
-    {GDEXTENSION_METHOD_FLAGS_DEFAULT}
+  let typedM = m.getTypeInst()
+  let firstParam = typedM[0][1]
+  let lastParam = typedM[0][^1]
+
+  var setLiteral = newTree(nnkCurly,
+    "GDEXTENSION_METHOD_FLAGS_DEFAULT".ident())
+
+  # TODO: Determine FLAG_CONST and FLAG_VIRTUAL
+
+  if firstParam[^2].kind == nnkSym:
+    setLiteral &= "GDEXTENSION_METHOD_FLAG_STATIC".ident()
+
+  if lastParam[^2].kind == nnkBracketExpr and
+      lastParam[^2][0].strVal() == "varargs":
+    setLiteral &= "GDEXTENSION_METHOD_FLAG_VARARG".ident()
+
+  genAst(setLiteral):
+    setLiteral
 
 macro getArity(m: typed): static[int] =
   let typedM = m.getTypeInst()

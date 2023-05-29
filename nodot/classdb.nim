@@ -20,6 +20,7 @@ type
     methods: OrderedTable[string, MethodInfo]
 
     enums: seq[EnumInfo]
+    consts: seq[ConstInfo]
 
   ClassProperty = object
     setter: NimNode
@@ -37,6 +38,9 @@ type
     definition: NimNode
     isBitfield: bool
 
+  ConstInfo = object
+    name: NimNode
+    value: int
 
 var classes* {.compileTime.} = initOrderedTable[string, ClassRegistration]()
 
@@ -184,9 +188,7 @@ proc classEnumImpl(T: NimNode; isBitfield: bool; def: NimNode): NimNode =
   def.expectKind(nnkTypeDef)
   def[2].expectKind(nnkEnumTy)
 
-  let classType = $T
-
-  classes[classType].enums &= EnumInfo(
+  classes[$T].enums &= EnumInfo(
     definition: def,
     isBitfield: isBitfield)
 
@@ -198,6 +200,17 @@ macro classEnum*(T: typedesc; def: untyped) =
 macro classBitfield*(T: typedesc; def: untyped) =
   result = classEnumImpl(T, true, def)
 
+macro constant*(T: typedesc; def: typed) =
+  def.expectKind(nnkConstSection)
+
+  for constDef in def:
+    constDef[2].expectKind(nnkIntLit)
+
+    classes[$T].consts &= ConstInfo(
+      name: constDef[0],
+      value: constDef[2].intVal())
+
+  def
 
 func typeMetaData(_: typedesc): auto = GDEXTENSION_METHOD_ARGUMENT_METADATA_NONE
 
@@ -543,6 +556,19 @@ proc registerClassEnum*[T, E: enum](t: typedesc[E]; isBitfield: bool = false) =
 
   {.warning[HoleEnumConv]: on.}
 
+proc registerClassConstant*[T](name: string; value: int) =
+  var className: StringName = $T
+  var constName: StringName = name
+
+  gdInterfacePtr.classdb_register_extension_class_integer_constant(
+    gdTokenPtr,
+    addr className,
+    staticStringName(""),
+    addr constName,
+    GDExtensionInt(value),
+    GDExtensionBool(false))
+
+
 proc generateDefaultsTuple(mi: MethodInfo): NimNode =
   result = newTree(nnkTupleConstr)
 
@@ -587,6 +613,7 @@ macro register*() =
           methodType,
           methodSymbol = methodInfo.symbol,
           defaultArgs = methodInfo.generateDefaultsTuple):
+
         registerMethod[T, methodType](methodName, methodSymbol, defaultArgs)
 
       result.add(methodReg)
@@ -596,6 +623,17 @@ macro register*() =
           T = regInfo.typeNode,
           E = enumDef.definition[0][0],
           isBitfield = enumDef.isBitfield):
+
         registerClassEnum[T, E](E, isBitfield)
 
       result.add(enumReg)
+
+    for constDef in regInfo.consts:
+      let constReg = genAst(
+          T = regInfo.typeNode,
+          name = constDef.name.strVal(),
+          value = constDef.value):
+
+        registerClassConstant[T](name, value)
+
+      result.add(constReg)

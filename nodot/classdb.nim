@@ -2,7 +2,7 @@ import ../nodot
 import ./builtins/types/[variant, stringname]
 import ./enums
 
-import std/[macros, genasts, tables, strutils, options]
+import std/[macros, genasts, tables, strutils, options, enumutils, typetraits]
 
 type
   ClassRegistration = object
@@ -16,12 +16,19 @@ type
     properties: OrderedTable[string, ClassProperty]
     methods: OrderedTable[string, MethodInfo]
 
+    enums: seq[EnumInfo]
+
   ClassProperty = object
     setter: NimNode
     getter: NimNode
 
   MethodInfo = object
     symbol: NimNode
+
+  EnumInfo = object
+    definition: NimNode
+    isBitfield: bool
+
 
 var classes* {.compileTime.} = initOrderedTable[string, ClassRegistration]()
 
@@ -41,7 +48,9 @@ macro custom_class*(def: untyped): untyped =
 
     ctorFuncIdent: newNilLit(),
     dtorFuncIdent: newNilLit(),
-    notificationHandlerIdent: newNilLit())
+    notificationHandlerIdent: newNilLit(),
+
+    enums: @[])
 
   if def[2][1][0].strVal() notin classes:
     # If we are deriving from a Godot class as opposed to one of our own,
@@ -140,6 +149,25 @@ macro property*(def: typed) =
     p.getter = def[0]
 
   def
+
+proc classEnumImpl(T: NimNode; isBitfield: bool; def: NimNode): NimNode =
+  def.expectKind(nnkTypeDef)
+  def[2].expectKind(nnkEnumTy)
+
+  let classType = $T
+
+  classes[classType].enums &= EnumInfo(
+    definition: def,
+    isBitfield: isBitfield)
+
+  def
+
+macro classEnum*(T: typedesc; def: untyped) =
+  result = classEnumImpl(T, false, def)
+
+macro classBitfield*(T: typedesc; def: untyped) =
+  result = classEnumImpl(T, true, def)
+
 
 func typeMetaData(_: typedesc): auto = GDEXTENSION_METHOD_ARGUMENT_METADATA_NONE
 
@@ -450,6 +478,27 @@ proc registerMethod[T, M: proc](name: string; callable: static[M]) =
     addr className,
     addr methodInfo)
 
+iterator possiblyHoleyItems[E: enum](_: typedesc[E]): E =
+  when E is HoleyEnum:
+    for elem in enumutils.items(E): yield elem
+  else:
+    for elem in E: yield elem
+
+proc registerClassEnum[T, E: enum](t: typedesc[E]; isBitfield: bool = false) =
+  var className: StringName = $T
+  var enumName: StringName = $E
+
+  for value in possiblyHoleyItems(E):
+    var fieldName: StringName = $value
+
+    gdInterfacePtr.classdb_register_extension_class_integer_constant(
+      gdTokenPtr,
+      addr className,
+      addr enumName,
+      addr fieldName,
+      GDExtensionInt(ord(value)),
+      GDExtensionBool(isBitfield))
+
 macro register*() =
   result = newStmtList()
 
@@ -486,3 +535,12 @@ macro register*() =
         registerMethod[T, methodType](methodName, methodSymbol)
 
       result.add(methodReg)
+
+    for enumDef in regInfo.enums:
+      let enumReg = genAst(
+          T = regInfo.typeNode,
+          E = enumDef.definition[0][0],
+          isBitfield = enumDef.isBitfield):
+        registerClassEnum[T, E](E, isBitfield)
+
+      result.add(enumReg)

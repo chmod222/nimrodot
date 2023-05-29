@@ -314,6 +314,14 @@ proc instance_notification[T](instance: GDExtensionClassInstancePtr;
 
   regInst.notifierFunc(nimInst[], int(what))
 
+proc instance_virt_query[T](instance: GDExtensionClassInstancePtr;
+                            methodName: GDExtensionConstStringNamePtr): GDExtensionClassCallVirtual
+                            {.cdecl.} =
+  var nimInst = cast[ptr T](instance)
+  var methodName = cast[ptr StringName](methodName)
+
+  nil
+
 proc registerClass*[T, P](
     lastNative: StringName,
     ctorFunc: ConstructorFunc[T];
@@ -352,7 +360,7 @@ proc registerClass*[T, P](
 
     create_instance_func: create_instance[T, P], # default ctor
     free_instance_func: free_instance[T, P],     # dtor
-    get_virtual_func: nil,
+    get_virtual_func: instance_virt_query[T],
     get_rid_func: nil,
 
     class_userdata: addr rcr)

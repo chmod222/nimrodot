@@ -11,6 +11,7 @@ type
 
     ctorFuncIdent: NimNode
     dtorFuncIdent: NimNode
+    notificationHandlerIdent: NimNode
 
     properties: OrderedTable[string, ClassProperty]
     methods: OrderedTable[string, MethodInfo]
@@ -36,7 +37,11 @@ macro custom_class*(def: untyped): untyped =
 
   classes[def[0][0].strVal()] = ClassRegistration(
     typeNode: def[0][0],
-    parentNode: def[2][1][0])
+    parentNode: def[2][1][0],
+
+    ctorFuncIdent: newNilLit(),
+    dtorFuncIdent: newNilLit(),
+    notificationHandlerIdent: newNilLit())
 
   if def[2][1][0].strVal() notin classes:
     # If we are deriving from a Godot class as opposed to one of our own,
@@ -45,36 +50,45 @@ macro custom_class*(def: untyped): untyped =
 
   def
 
-macro ctor*(def: typed) =
-  def.expectKind(nnkProcDef)
 
+template expectClassReceiverProc(def: typed) =
+  ## Helper function to assert that a proc definition with `x: var T` as the
+  ## first parameter has been provided.
+  def.expectKind(nnkProcDef)
   def[3][1][^2].expectKind(nnkVarTy)
   def[3][1][^2][0].expectKind(nnkSym)
 
-  classes[def[3][1][^2][0].strVal()].ctorFuncIdent = def[0]
+template className(def: typed): string =
+  def[3][1][^2][0].strVal()
+
+macro ctor*(def: typed) =
+  def.expectClassReceiverProc()
+
+  classes[def.className].ctorFuncIdent = def[0]
 
   def
 
 macro dtor*(def: typed) =
-  def.expectKind(nnkProcDef)
+  def.expectClassReceiverProc()
 
-  def[3][1][^2].expectKind(nnkVarTy)
-  def[3][1][^2][0].expectKind(nnkSym)
-
-  classes[def[3][1][^2][0].strVal()].dtorFuncIdent = def[0]
+  classes[def.className].dtorFuncIdent = def[0]
 
   def
 
 macro classMethod*(def: typed) =
-  def.expectKind(nnkProcDef)
-
-  def[3][1][^2].expectKind(nnkVarTy)
-  def[3][1][^2][0].expectKind(nnkSym)
+  def.expectClassReceiverProc()
 
   # TODO: Capture default arguments here, as they are lost below
-  classes[def[3][1][^2][0].strVal()].methods[def[0].strVal()] = MethodInfo(
+  classes[def.className].methods[def[0].strVal()] = MethodInfo(
     symbol: def[0]
   )
+
+  def
+
+macro notification*(def: typed) =
+  def.expectClassReceiverProc()
+
+  classes[def.className].notificationHandlerIdent = def[0]
 
   def
 
@@ -148,6 +162,8 @@ type
   ConstructorFunc[T] = proc(obj: var T)
   DestructorFunc[T] = proc(obj: var T)
 
+  NotificationHandlerFunc[T] = proc(obj: var T; what: int)
+
   #PropertyGetterFunc[T] = proc(obj: var T): Variant
   #PropertySetterFunc[T] = proc(obj: var T; value: Variant)
 
@@ -157,6 +173,7 @@ type
     ctor: ConstructorFunc[T]
     dtor: DestructorFunc[T]
 
+    notifierFunc: NotificationHandlerFunc[T]
 
 proc create_instance[T, P](userdata: pointer): pointer {.cdecl.} =
   var nimInst = cast[ptr T](gdInterfacePtr.mem_alloc(sizeof(T).csize_t))
@@ -189,8 +206,8 @@ proc free_instance[T, P](userdata: pointer; instance: GDExtensionClassInstancePt
   gdInterfacePtr.mem_free(nimInst)
 
 proc instance_to_string[T](instance: GDExtensionClassInstancePtr;
-                  valid: ptr GDExtensionBool;
-                  str: GDExtensionStringPtr) {.cdecl.} =
+                           valid: ptr GDExtensionBool;
+                           str: GDExtensionStringPtr) {.cdecl.} =
   var nimInst = cast[ptr T](instance)
 
   when compiles($nimInst[]):
@@ -199,10 +216,22 @@ proc instance_to_string[T](instance: GDExtensionClassInstancePtr;
   else:
     valid[] = 0
 
+proc instance_notification[T](instance: GDExtensionClassInstancePtr;
+                              what: int32) {.cdecl.} =
+  var nimInst = cast[ptr T](instance)
+  let regInst = cast[ptr RuntimeClassRegistration[T]](nimInst.gdclassinfo)
+
+  if regInst.notifierFunc.isNil():
+    return
+
+  regInst.notifierFunc(nimInst[], int(what))
+
 proc registerClass*[T, P](
     lastNative: StringName,
-    ctorFunc: proc(x: var T);
-    dtorFunc: proc(x: var T)) =
+    ctorFunc: ConstructorFunc[T];
+    dtorFunc: DestructorFunc[T];
+    notification: NotificationHandlerFunc[T]) =
+
   var className: StringName = $T
   var parentClassName: StringName = $P
 
@@ -210,6 +239,7 @@ proc registerClass*[T, P](
   var rcr {.global.}: RuntimeClassRegistration[T] = RuntimeClassRegistration[T](
     ctor: ctorFunc,
     dtor: dtorFunc,
+    notifierFunc: notification,
     lastGodotAncestor: lastNative
   )
 
@@ -226,7 +256,7 @@ proc registerClass*[T, P](
     property_can_revert_func: nil, #can_property_revert[T],
     property_get_revert_func: nil, #property_revert[T],
 
-    notification_func: nil, #notify[T],
+    notification_func: instance_notification[T],
     to_string_func: instance_to_string[T],
     reference_func: nil,
     unreference_func: nil,
@@ -405,9 +435,10 @@ macro register*() =
         T = regInfo.typeNode,
         P = regInfo.parentNode,
         ctor = regInfo.ctorFuncIdent,
-        dtor = regInfo.dtorFuncIdent):
+        dtor = regInfo.dtorFuncIdent,
+        notification = regInfo.notificationHandlerIdent):
 
-      registerClass[T, P](lastAncestor, ctor, dtor)
+      registerClass[T, P](lastAncestor, ctor, dtor, notification)
 
     result.add(classReg)
 

@@ -487,7 +487,7 @@ proc registerMethod*[T, M: proc](name: string; callable: static[M]; defaults: au
     defaultVariants &= %default
 
   var defaultVariantPtrs = collect(newSeqOfCap(len(defaultVariants))):
-    for i in 0..len(defaultVariants):
+    for i in 0..high(defaultVariants):
       cast[ptr GDExtensionVariantPtr](addr defaultVariants[i])
 
   var methodInfo = GDExtensionClassMethodInfo(

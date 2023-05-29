@@ -9,6 +9,9 @@ type
     typeNode: NimNode
     parentNode: NimNode
 
+    virtual: bool
+    abstract: bool
+
     ctorFuncIdent: NimNode
     dtorFuncIdent: NimNode
     notificationHandlerIdent: NimNode
@@ -37,7 +40,7 @@ type
 
 var classes* {.compileTime.} = initOrderedTable[string, ClassRegistration]()
 
-macro custom_class*(def: untyped): untyped =
+macro custom_class*(def: untyped) =
   def[0].expectKind(nnkPragmaExpr)
   def[0][0].expectKind(nnkIdent)
 
@@ -64,6 +67,16 @@ macro custom_class*(def: untyped): untyped =
 
   def
 
+macro abstract*(def: untyped) =
+  classes[def[0][0].strVal()].abstract = true
+
+  def
+
+# Unfortunately, "virtual" is already taken
+macro gdvirtual*(def: untyped) =
+  classes[def[0][0].strVal()].virtual = true
+
+  def
 
 template expectClassReceiverProc(def: typed) =
   ## Helper function to assert that a proc definition with `x: var T` as the
@@ -292,7 +305,8 @@ proc registerClass*[T, P](
     lastNative: StringName,
     ctorFunc: ConstructorFunc[T];
     dtorFunc: DestructorFunc[T];
-    notification: NotificationHandlerFunc[T]) =
+    notification: NotificationHandlerFunc[T];
+    abstract, virtual: bool = false) =
 
   var className: StringName = $T
   var parentClassName: StringName = $P
@@ -306,8 +320,8 @@ proc registerClass*[T, P](
   )
 
   var creationInfo = GDExtensionClassCreationInfo(
-    is_virtual: 0,  # TODO
-    is_abstract: 0, # TODO
+    is_virtual: GDExtensionBool(virtual),
+    is_abstract: GDExtensionBool(abstract),
 
     set_func: nil, #property_set[T],
     get_func: nil, #property_get[T],
@@ -556,9 +570,11 @@ macro register*() =
         P = regInfo.parentNode,
         ctor = regInfo.ctorFuncIdent,
         dtor = regInfo.dtorFuncIdent,
-        notification = regInfo.notificationHandlerIdent):
+        notification = regInfo.notificationHandlerIdent,
+        isAbstract = regInfo.abstract,
+        isVirtual = regInfo.virtual):
 
-      registerClass[T, P](lastAncestor, ctor, dtor, notification)
+      registerClass[T, P](lastAncestor, ctor, dtor, notification, isAbstract, isVirtual)
 
     result.add(classReg)
 

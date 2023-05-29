@@ -433,7 +433,7 @@ macro getParameterMetaInfo(m: typed): auto =
   genAst(args):
     args
 
-proc registerMethod[T, M: proc](name: string; callable: static[M]) =
+proc registerMethod*[T, M: proc](name: string; callable: static[M]) =
   var className: StringName = $T
   var methodName: StringName = name
 
@@ -484,7 +484,7 @@ iterator possiblyHoleyItems[E: enum](_: typedesc[E]): E =
   else:
     for elem in E: yield elem
 
-proc registerClassEnum[T, E: enum](t: typedesc[E]; isBitfield: bool = false) =
+proc registerClassEnum*[T, E: enum](t: typedesc[E]; isBitfield: bool = false) =
   var className: StringName = $T
   var enumName: StringName = $E
 

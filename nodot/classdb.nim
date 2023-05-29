@@ -244,7 +244,6 @@ proc create_instance[T, P](userdata: pointer): pointer {.cdecl.} =
 
   var className = ($T).StringName
   var lastNativeClassName = rcr.lastGodotAncestor
-  var parentClassName = ($P).StringName
 
   # We construct the parent class and store it into our opaque pointer field, so we have
   # a handle from Godot, for Godot.
@@ -518,6 +517,8 @@ proc registerClassEnum*[T, E: enum](t: typedesc[E]; isBitfield: bool = false) =
   var className: StringName = $T
   var enumName: StringName = $E
 
+  {.warning[HoleEnumConv]: off.}
+
   for value in possiblyHoleyItems(E):
     var fieldName: StringName = $value
 
@@ -528,6 +529,8 @@ proc registerClassEnum*[T, E: enum](t: typedesc[E]; isBitfield: bool = false) =
       addr fieldName,
       GDExtensionInt(ord(value)),
       GDExtensionBool(isBitfield))
+
+  {.warning[HoleEnumConv]: on.}
 
 proc generateDefaultsTuple(mi: MethodInfo): NimNode =
   result = newTree(nnkTupleConstr)

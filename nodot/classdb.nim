@@ -408,7 +408,6 @@ macro getParameterInfo(m: typed): auto =
   var args = newTree(nnkBracket)
 
   # TODO:
-  #   - Get default values from global "classes"
   #   - Retrieve a hint name somehow. Parse doc comment if applied, or {.hint.} pragma?
 
   # we ignore the first parameter, as it's implied for Godot
@@ -434,8 +433,6 @@ macro getParameterMetaInfo(m: typed): auto =
   let typedM = m.getTypeInst()
 
   var args = newTree(nnkBracket)
-
-  # TODO: Get default values from global "classes"
 
   # we ignore the first parameter, as it's implied for godot
   if len(typedM[0]) > 2:

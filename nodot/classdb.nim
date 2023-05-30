@@ -18,6 +18,8 @@ type
     notificationHandlerIdent: NimNode
     revertQueryIdent: NimNode
     listPropertiesIdent: NimNode
+    getPropertyIdent: NimNode
+    setPropertyIdent: NimNode
 
     properties: OrderedTable[string, ClassProperty]
     methods: OrderedTable[string, MethodInfo]
@@ -83,6 +85,8 @@ macro custom_class*(def: untyped) =
     notificationHandlerIdent: newNilLit(),
     revertQueryIdent: newNilLit(),
     listPropertiesIdent: newNilLit(),
+    getPropertyIdent: newNilLit(),
+    setPropertyIdent: newNilLit(),
 
     enums: @[])
 
@@ -246,6 +250,22 @@ macro propertyQuery*(def: typed) =
 
   def
 
+macro getProperty*(def: typed) =
+  def.expectClassReceiverProc()
+  let classType = def[3][1][1][0]
+
+  classes[classType.strVal()].getPropertyIdent = def[0]
+
+  def
+
+macro setProperty*(def: typed) =
+  def.expectClassReceiverProc()
+  let classType = def[3][1][1][0]
+
+  classes[classType.strVal()].setPropertyIdent = def[0]
+
+  def
+
 proc classEnumImpl(T: NimNode; isBitfield: bool; def: NimNode): NimNode =
   def.expectKind(nnkTypeDef)
   def[2].expectKind(nnkEnumTy)
@@ -317,8 +337,8 @@ type
   RevertQueryFunc[T] = proc(obj: var T; propertyName: StringName): Option[Variant]
   PropertyListFunc[T] = proc(obj: var T; properties: var seq[GDExtensionPropertyInfo])
 
-  #PropertyGetterFunc[T] = proc(obj: var T): Variant
-  #PropertySetterFunc[T] = proc(obj: var T; value: Variant)
+  PropertyGetterFunc[T] = proc(obj: var T; propertyName: StringName): Option[Variant]
+  PropertySetterFunc[T] = proc(obj: var T; propertyName: StringName; value: Variant): bool
 
   RuntimeClassRegistration[T] = object
     lastGodotAncestor: StringName = "Object"
@@ -329,6 +349,9 @@ type
     notifierFunc: NotificationHandlerFunc[T]
     revertFunc: RevertQueryFunc[T]
     propertyListFunc: PropertyListFunc[T]
+
+    getFunc: PropertyGetterFunc[T]
+    setFunc: PropertySetterFunc[T]
 
 proc create_instance[T, P](userdata: pointer): pointer {.cdecl.} =
   var nimInst = cast[ptr T](gdInterfacePtr.mem_alloc(sizeof(T).csize_t))
@@ -519,6 +542,40 @@ proc free_class_properties[T](instance: GDExtensionClassInstancePtr;
 
     dealloc(list)
 
+proc property_set[T](instance: GDExtensionClassInstancePtr;
+                     name: GDExtensionConstStringNamePtr;
+                     value: GDExtensionConstVariantPtr): GDExtensionBool {.cdecl.} =
+  var nimInst = cast[ptr T](instance)
+  let regInst = cast[ptr RuntimeClassRegistration[T]](nimInst.gdclassinfo)
+  var prop = cast[ptr StringName](name)
+  var value = cast[ptr Variant](value)
+
+  result = 0
+
+  if not regInst.setFunc.isNil():
+    result = GDExtensionBool(regInst.setFunc(nimInst[], prop[], value[]))
+
+proc property_get[T](instance: GDExtensionClassInstancePtr;
+                     name: GDExtensionConstStringNamePtr;
+                     value: GDExtensionVariantPtr): GDExtensionBool {.cdecl.} =
+  var nimInst = cast[ptr T](instance)
+  let regInst = cast[ptr RuntimeClassRegistration[T]](nimInst.gdclassinfo)
+
+  var prop = cast[ptr StringName](name)
+  var retValue = cast[ptr Variant](value)
+
+  var value = none Variant
+
+  result = 0
+
+  if not regInst.getFunc.isNil():
+    value = regInst.getFunc(nimInst[], prop[])
+    result = GDExtensionBool(value.isSome())
+
+    if value.isSome():
+      retValue[] = value.unsafeGet()
+
+
 proc registerClass*[T, P](
     lastNative: StringName,
     ctorFunc: ConstructorFunc[T];
@@ -526,6 +583,8 @@ proc registerClass*[T, P](
     notification: NotificationHandlerFunc[T];
     revertQuery: RevertQueryFunc[T];
     listProperties: PropertyListFunc[T];
+    getProperty: PropertyGetterFunc[T];
+    setProperty: PropertySetterFunc[T];
     abstract, virtual: bool = false) =
 
   var className: StringName = $T
@@ -538,15 +597,17 @@ proc registerClass*[T, P](
     notifierFunc: notification,
     lastGodotAncestor: lastNative,
     revertFunc: revertQuery,
-    propertyListFunc: listProperties
+    propertyListFunc: listProperties,
+    getFunc: getProperty,
+    setfunc: setProperty
   )
 
   var creationInfo = GDExtensionClassCreationInfo(
     is_virtual: GDExtensionBool(virtual),
     is_abstract: GDExtensionBool(abstract),
 
-    set_func: nil, #property_set[T],
-    get_func: nil, #property_get[T],
+    set_func: property_set[T],
+    get_func: property_get[T],
 
     get_property_list_func: list_class_properties[T],
     free_property_list_func: free_class_properties[T],
@@ -812,6 +873,8 @@ macro register*() =
         notification = regInfo.notificationHandlerIdent,
         revertQuery = regInfo.revertQueryIdent,
         listProperties = regInfo.listPropertiesIdent,
+        getProp = regInfo.getPropertyIdent,
+        setProp = regInfo.setPropertyIdent,
         isAbstract = regInfo.abstract,
         isVirtual = regInfo.virtual):
 
@@ -822,6 +885,8 @@ macro register*() =
         notification,
         revertQuery,
         listProperties,
+        getProp,
+        setProp,
         isAbstract,
         isVirtual)
 

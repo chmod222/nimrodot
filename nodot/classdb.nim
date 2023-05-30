@@ -30,6 +30,7 @@ type
   MethodInfo = object
     symbol: NimNode
     defaultValues: seq[DefaultedArgument]
+    virtual: bool = false
 
   DefaultedArgument = object
     binding: NimNode
@@ -145,6 +146,31 @@ macro classMethod*(def: typed) =
   )
 
   def
+
+macro virtualClassMethod*(def: typed) =
+  # Virtual methods are not static by definition
+  def.expectClassReceiverProc()
+
+  var defaults: seq[DefaultedArgument] = @[]
+
+  if len(def[3]) > 1:
+    for identDef in def[3][2..^1]:
+      if identDef[^1].kind == nnkEmpty:
+        continue
+
+      for binding in identDef[0..^3]:
+        defaults &= DefaultedArgument(
+          binding: binding,
+          default: identDef[^1])
+
+  classes[def.className].methods[def[0].strVal()] = MethodInfo(
+    symbol: def[0],
+    defaultValues: defaults,
+    virtual: true
+  )
+
+  def
+
 
 macro notification*(def: typed) =
   def.expectClassReceiverProc()
@@ -536,13 +562,25 @@ macro getParameterMetaInfo(m: typed): auto =
   genAst(args):
     args
 
-proc registerMethod*[T, M: proc](name: string; callable: static[M]; defaults: auto) =
+proc registerMethod*[T, M: proc](
+    name: string;
+    callable: static[M];
+    defaults: auto;
+    virtual: bool = false) =
   var className: StringName = $T
   var methodName: StringName = name
+
+  # TODO: The {.classMethod.} macros ensures every proc here has a typedesc[T] or var T
+  #       parameter at the first position. This function does not, but it can still be
+  #       called manually if need be, so we must verify here as well.
 
   var returnInfo = callable.getReturnInfo()
   var rvInfo: ptr GDExtensionPropertyInfo = nil
   var rvMeta = GDEXTENSION_METHOD_ARGUMENT_METADATA_NONE
+  var defaultFlags: set[GDExtensionClassMethodFlags] = {}
+
+  if virtual:
+    defaultFlags.incl(GDEXTENSION_METHOD_FLAG_VIRTUAL)
 
   if returnInfo.isSome():
     rvInfo = addr returnInfo.unsafeGet().returnValue
@@ -572,7 +610,7 @@ proc registerMethod*[T, M: proc](name: string; callable: static[M]; defaults: au
 
     call_func: nil,
     ptrcall_func: nil,
-    method_flags: cast[uint32](callable.getMethodFlags()),
+    method_flags: cast[uint32](callable.getMethodFlags() + defaultFlags),
 
     has_return_value: GDExtensionBool(returnInfo.isSome()),
     return_value_info: rvInfo,
@@ -683,9 +721,10 @@ macro register*() =
           methodName,
           methodType,
           methodSymbol = methodInfo.symbol,
-          defaultArgs = methodInfo.generateDefaultsTuple):
+          defaultArgs = methodInfo.generateDefaultsTuple,
+          isVirtual = methodInfo.virtual):
 
-        registerMethod[T, methodType](methodName, methodSymbol, defaultArgs)
+        registerMethod[T, methodType](methodName, methodSymbol, defaultArgs, isVirtual)
 
       result.add(methodReg)
 

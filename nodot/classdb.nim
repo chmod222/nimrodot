@@ -737,10 +737,13 @@ proc registerMethod*[T, M: proc](
   var returnInfo = callable.getReturnInfo()
   var rvInfo: ptr GDExtensionPropertyInfo = nil
   var rvMeta = GDEXTENSION_METHOD_ARGUMENT_METADATA_NONE
-  var defaultFlags: set[GDExtensionClassMethodFlags] = {}
+  var defaultFlags = uint32 GDEXTENSION_METHOD_FLAGS_DEFAULT
 
   if virtual:
-    defaultFlags.incl(GDEXTENSION_METHOD_FLAG_VIRTUAL)
+    defaultFlags = defaultFlags or (uint32 GDEXTENSION_METHOD_FLAG_VIRTUAL)
+
+  for flag in callable.getMethodFlags():
+    defaultFlags = defaultFlags or (uint32 flag)
 
   if returnInfo.isSome():
     rvInfo = addr returnInfo.unsafeGet().returnValue
@@ -764,7 +767,7 @@ proc registerMethod*[T, M: proc](
 
     call_func: nil,
     ptrcall_func: nil,
-    method_flags: cast[uint32](callable.getMethodFlags() + defaultFlags),
+    method_flags: defaultFlags,
 
     has_return_value: GDExtensionBool(returnInfo.isSome()),
     return_value_info: rvInfo,

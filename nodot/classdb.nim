@@ -450,7 +450,7 @@ proc staticStringName(s: static[string]): ptr StringName =
 
   addr interned
 
-proc gdClassName[T](_: typedesc[T]): ptr StringName =
+proc gdClassName[T: AnyObject](_: typedesc[T]): ptr StringName =
   staticStringName($T)
 
 type

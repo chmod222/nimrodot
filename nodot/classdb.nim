@@ -1,8 +1,9 @@
 import ../nodot
 import ./builtins/types/[variant, stringname]
+import ./classes/types/"object"
 import ./enums
 
-import std/[macros, genasts, tables, strutils, options, enumutils, typetraits, sugar]
+import std/[macros, genasts, tables, strutils, options, enumutils, typetraits, sugar, enumerate]
 
 type
   ClassRegistration = object
@@ -16,6 +17,7 @@ type
     dtorFuncIdent: NimNode
     notificationHandlerIdent: NimNode
     revertQueryIdent: NimNode
+    listPropertiesIdent: NimNode
 
     properties: OrderedTable[string, ClassProperty]
     methods: OrderedTable[string, MethodInfo]
@@ -79,6 +81,8 @@ macro custom_class*(def: untyped) =
     ctorFuncIdent: newNilLit(),
     dtorFuncIdent: newNilLit(),
     notificationHandlerIdent: newNilLit(),
+    revertQueryIdent: newNilLit(),
+    listPropertiesIdent: newNilLit(),
 
     enums: @[])
 
@@ -222,6 +226,26 @@ macro revertQuery*(def: typed) =
 
   def
 
+macro propertyQuery*(def: typed) =
+  def.expectClassReceiverProc()
+
+  def[3].expectLen(3)
+
+  # No return
+  def[3][0].expectKind(nnkEmpty)
+
+  # var seq[GDExtensionPropretyInfo]
+  def[3][2][^2].expectKind(nnkVarTy)
+  def[3][2][^2][0].expectKind(nnkBracketExpr)
+  def[3][2][^2][0][0].expectIdent("seq")
+  def[3][2][^2][0][1].expectIdent("GDExtensionPropertyInfo")
+
+  let classType = def[3][1][1][0]
+
+  classes[classType.strVal()].listPropertiesIdent = def[0]
+
+  def
+
 proc classEnumImpl(T: NimNode; isBitfield: bool; def: NimNode): NimNode =
   def.expectKind(nnkTypeDef)
   def[2].expectKind(nnkEnumTy)
@@ -291,6 +315,7 @@ type
 
   NotificationHandlerFunc[T] = proc(obj: var T; what: int)
   RevertQueryFunc[T] = proc(obj: var T; propertyName: StringName): Option[Variant]
+  PropertyListFunc[T] = proc(obj: var T; properties: var seq[GDExtensionPropertyInfo])
 
   #PropertyGetterFunc[T] = proc(obj: var T): Variant
   #PropertySetterFunc[T] = proc(obj: var T; value: Variant)
@@ -303,6 +328,7 @@ type
 
     notifierFunc: NotificationHandlerFunc[T]
     revertFunc: RevertQueryFunc[T]
+    propertyListFunc: PropertyListFunc[T]
 
 proc create_instance[T, P](userdata: pointer): pointer {.cdecl.} =
   var nimInst = cast[ptr T](gdInterfacePtr.mem_alloc(sizeof(T).csize_t))
@@ -393,12 +419,113 @@ proc property_revert[T](instance: GDExtensionClassInstancePtr;
 
   return 1
 
+# Since we deal with a lot of compile time know stuff, this comes in
+# useful quite often. As the function is generated once per string,
+# we have our own interning of interned strings.
+proc staticStringName(s: static[string]): ptr StringName =
+  var interned {.global.}: StringName = s
+
+  addr interned
+
+proc gdClassName[T](_: typedesc[T]): ptr StringName =
+  staticStringName($T)
+
+type
+  PropertyInfo*[T] = object
+    name: StringName
+    hint: StringName = ""
+    propertyType: typedesc[T]
+    propertyUsage: uint32 = uint32(pufDefault)
+    propertyHint: uint32 = uint32(phiNone)
+
+proc addPropertyInfo*[T](list: var seq[GDExtensionPropertyInfo]; info: PropertyInfo[T]) =
+  when T is AnyObject:
+    var classNamePtr = gdClassName(T)
+  else:
+    var classNamePtr = staticStringName("")
+
+  var namePtr = create(StringName)
+  var hintPtr = create(StringName)
+
+  namePtr[] = info.name
+  hintPtr[] = info.hint
+
+  list &= GDExtensionPropertyInfo(
+    name: namePtr,
+    `type`: T.variantTypeId(),
+    class_name: classNamePtr,
+    hint: info.propertyHint,
+    hint_string: hintPtr,
+    usage: info.propertyUsage)
+
+proc addPropertyInfo*[T](list: var seq[GDExtensionPropertyInfo]; name: StringName; hint: StringName = "") =
+  list.addPropertyInfo(PropertyInfo[T](name: name, hint: hint))
+
+type
+  # GDExtension does not tell us (in free_class_properties), how many properties
+  # we gave it in list_class_properties, but we have to iterate over it to free
+  # the names we allocated previously. So we use the old C trick of allocating the
+  # list with a little prefix to store our count in, followed by the actual list payload,
+  # give Godot the offset pointer to `elems` and calculate the reverse when it's time to
+  # free the list.
+  #
+  # This is slightly more expensive than letting the library user cache a list of their
+  # properties and returning it in order to guarantee the fields are kept alive until
+  # the free callback (like godot-cpp does), but it's also much more convenient and unless
+  # get_property_list() is invoked in a hot loop it shouldn't make a difference.
+  LenPrefixedPropertyInfo = object
+    count: uint32
+    elems: UncheckedArray[GDExtensionPropertyInfo]
+
+proc list_class_properties[T](instance: GDExtensionClassInstancePtr;
+                              count: ptr uint32): ptr GDExtensionPropertyInfo {.cdecl.} =
+  var nimInst = cast[ptr T](instance)
+  let regInst = cast[ptr RuntimeClassRegistration[T]](nimInst.gdclassinfo)
+
+  var properties = newSeq[GDExtensionPropertyInfo]()
+
+  if not regInst.propertyListFunc.isNil():
+    regInst.propertyListFunc(nimInst[], properties)
+
+  count[] = uint32 len(properties)
+
+  if regInst.propertyListFunc.isNil() or len(properties) == 0:
+    return nil
+
+  let size = sizeOf(LenPrefixedPropertyInfo) + (sizeOf(GDExtensionPropertyInfo) * len(properties))
+  let prefixed = cast[ptr LenPrefixedPropertyInfo](alloc(size))
+
+  prefixed[].count = count[]
+
+  var propertyInfos = cast[ptr UncheckedArray[GDExtensionPropertyInfo]](addr prefixed[].elems)
+
+  for i, property in enumerate(properties):
+    propertyInfos[i] = property
+
+  result = cast[ptr GDExtensionPropertyInfo](addr prefixed[].elems)
+
+proc free_class_properties[T](instance: GDExtensionClassInstancePtr;
+                              list: ptr GDExtensionPropertyInfo) {.cdecl.} =
+  let offset = offsetOf(LenPrefixedPropertyInfo, elems)
+  let prefixed = cast[ptr LenPrefixedPropertyInfo](cast[pointer](cast[int](list) - offset))
+
+  if not list.isNil():
+    for i in 0..prefixed[].count - 1:
+      `=destroy`(prefixed[].elems[i].name)
+      `=destroy`(prefixed[].elems[i].hint_string)
+
+      dealloc(prefixed[].elems[i].name)
+      dealloc(prefixed[].elems[i].hint_string)
+
+    dealloc(list)
+
 proc registerClass*[T, P](
     lastNative: StringName,
     ctorFunc: ConstructorFunc[T];
     dtorFunc: DestructorFunc[T];
     notification: NotificationHandlerFunc[T];
     revertQuery: RevertQueryFunc[T];
+    listProperties: PropertyListFunc[T];
     abstract, virtual: bool = false) =
 
   var className: StringName = $T
@@ -411,6 +538,7 @@ proc registerClass*[T, P](
     notifierFunc: notification,
     lastGodotAncestor: lastNative,
     revertFunc: revertQuery,
+    propertyListFunc: listProperties
   )
 
   var creationInfo = GDExtensionClassCreationInfo(
@@ -420,8 +548,8 @@ proc registerClass*[T, P](
     set_func: nil, #property_set[T],
     get_func: nil, #property_get[T],
 
-    get_property_list_func: nil, #list_properties[T],
-    free_property_list_func: nil, #free_properties[T],
+    get_property_list_func: list_class_properties[T],
+    free_property_list_func: free_class_properties[T],
 
     property_can_revert_func: can_property_revert[T],
     property_get_revert_func: property_revert[T],
@@ -448,14 +576,6 @@ type
   ReturnValueInfo = tuple
     returnValue: GDExtensionPropertyInfo
     returnMeta: GDExtensionClassMethodArgumentMetadata
-
-# Since we deal with a lot of compile time know stuff, this comes in
-# useful quite often. As the function is generated once per string,
-# we have our own interning of interned strings.
-proc staticStringName(s: static[string]): ptr StringName =
-  var interned {.global.}: StringName = s
-
-  addr interned
 
 proc gdClassName(_: typedesc): ptr StringName = staticStringName("")
 
@@ -691,6 +811,7 @@ macro register*() =
         dtor = regInfo.dtorFuncIdent,
         notification = regInfo.notificationHandlerIdent,
         revertQuery = regInfo.revertQueryIdent,
+        listProperties = regInfo.listPropertiesIdent,
         isAbstract = regInfo.abstract,
         isVirtual = regInfo.virtual):
 
@@ -700,6 +821,7 @@ macro register*() =
         dtor,
         notification,
         revertQuery,
+        listProperties,
         isAbstract,
         isVirtual)
 

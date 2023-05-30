@@ -679,30 +679,28 @@ macro getMethodFlags(m: typed): static[set[GDExtensionClassMethodFlags]] =
   genAst(setLiteral):
     setLiteral
 
-macro getArity(m: typed): static[int] =
+func isVarArg(m: NimNode): bool =
+  result = m.kind == nnkBracketExpr and m[0].strVal() == "varargs"
+
+macro getProcProps(m: typed): auto =
   let typedM = m.getTypeInst()
 
   var argc = 0
 
+  var args = newTree(nnkBracket)
+  var argsMeta = newTree(nnkBracket)
+
   if len(typedM[0]) > 2:
     for defs in typedM[0][2..^1]:
+      if defs[^2].isVarArg():
+        break
+
       for binding in defs[0..^3]:
         inc argc
 
-  newLit(argc)
+        let argMeta = genAst(P = defs[^2]):
+          typeMetaData(typeOf P)
 
-macro getParameterInfo(m: typed): auto =
-  let typedM = m.getTypeInst()
-
-  var args = newTree(nnkBracket)
-
-  # TODO:
-  #   - Retrieve a hint name somehow. Parse doc comment if applied, or {.hint.} pragma?
-
-  # we ignore the first parameter, as it's implied for Godot
-  if len(typedM[0]) > 2:
-    for defs in typedM[0][2..^1]:
-      for binding in defs[0..^3]:
         let arg = genAst(n = binding.strVal(), P = defs[^2]):
           GDExtensionPropertyInfo(
            `type`: variantTypeId(typeOf P),
@@ -713,27 +711,16 @@ macro getParameterInfo(m: typed): auto =
             usage: uint32(propertyUsage(typeOf P))
           )
 
+        argsMeta &= argMeta
         args &= arg
 
-  genAst(args):
-    args
-
-macro getParameterMetaInfo(m: typed): auto =
-  let typedM = m.getTypeInst()
-
-  var args = newTree(nnkBracket)
-
-  # we ignore the first parameter, as it's implied for godot
-  if len(typedM[0]) > 2:
-    for defs in typedM[0][2..^1]:
-      for binding in defs[0..^3]:
-        let arg = genAst(P = defs[^2]):
-          typeMetaData(typeOf P)
-
-        args &= arg
-
-  genAst(args):
-    args
+  result = genAst(procArgc = argc, procArgs = args, procArgsMeta = argsMeta):
+    tuple[pargc: int,
+          pargs: array[procArgc, GDExtensionPropertyInfo],
+          pmeta: array[procArgc, GDExtensionClassMethodArgumentMetadata]](
+      pargc: procArgc,
+      pargs: procArgs,
+      pmeta: procArgsMeta)
 
 proc registerMethod*[T, M: proc](
     name: string;
@@ -759,13 +746,7 @@ proc registerMethod*[T, M: proc](
     rvInfo = addr returnInfo.unsafeGet().returnValue
     rvMeta = returnInfo.unsafeGet().returnMeta
 
-  const argc = static callable.getArity()
-
-  var args: array[argc, GDExtensionPropertyInfo] =
-    callable.getParameterInfo()
-
-  var argsMeta: array[argc, GDExtensionClassMethodArgumentMetadata] =
-    callable.getParameterMetaInfo()
+  let argProperties = callable.getProcProps()
 
   var defaultVariants = newSeq[Variant]()
 
@@ -789,9 +770,9 @@ proc registerMethod*[T, M: proc](
     return_value_info: rvInfo,
     return_value_metadata: rvMeta,
 
-    argument_count: uint32(argc),
-    arguments_info: cast[ptr GDExtensionPropertyInfo](addr args),
-    arguments_metadata: cast[ptr GDExtensionClassMethodArgumentMetadata](addr argsMeta),
+    argument_count: uint32(argProperties.pargc),
+    arguments_info: cast[ptr GDExtensionPropertyInfo](addr argProperties.pargs),
+    arguments_metadata: cast[ptr GDExtensionClassMethodArgumentMetadata](addr argProperties.pmeta),
 
     default_argument_count: uint32(len(defaultVariantPtrs)),
     default_arguments: if len(defaultVariantPtrs) > 0:

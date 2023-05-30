@@ -71,5 +71,9 @@ func variantTypeId*(_: typedesc[bool]): GDExtensionVariantType =
 
 import ../../classes/types/"object"
 
-func variantTypeId*(_: typedesc[Object]): GDExtensionVariantType =
+type
+  AnyObject* = concept var t
+    t of Object
+
+func variantTypeId*[T: AnyObject](_: typedesc[T]): GDExtensionVariantType =
   GDEXTENSION_VARIANT_TYPE_OBJECT

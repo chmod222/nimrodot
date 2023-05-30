@@ -5,6 +5,10 @@ type
     ## A managed reference to a Godot class (extension class or user defined).
     reference: T
 
+  Owned*[T] = object
+    ## A managed, unique reference to a Godot class (extension class or user defined).
+    reference: T
+
 proc upRef[T](self: var Ref[T])
 proc downRef[T](self: var Ref[T]): bool
 
@@ -82,3 +86,28 @@ proc upRef[T](self: var Ref[T]) =
 
 proc downRef[T](self: var Ref[T]): bool =
   self.reference.unreference()
+
+
+# Owned[T] implementation
+
+proc makeOwned*[T](reference: T): Owned[T] =
+  assert T is ptr
+
+  Owned[T](reference: reference)
+
+proc `=destroy`*[T](r: var Owned[T]) =
+  if r.reference == nil:
+    return
+
+  gdInterfacePtr.object_destroy(r.reference.opaque)
+  r.reference = nil
+
+proc `=sink`*[T](dest: var Owned[T]; source: Owned[T]) =
+  `=destroy`(dest)
+
+  dest.wasMoved()
+  dest.reference = source.reference
+
+proc `=copy`*[T](dest: var Owned[T]; source: Owned[T]) {.error.}
+
+proc `[]`*[T: ptr](r: Owned[T]): lent T = r.reference

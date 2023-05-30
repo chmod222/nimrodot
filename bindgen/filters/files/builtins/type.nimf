@@ -36,10 +36,10 @@ import ../../api
 #  #  end for
 #  #end if
 type
-  $def.name* = object
 #  if def.isPointerType():
-    opaque: pointer
+  $def.name* = distinct pointer
 #  else:
+  $def.name* = object
 #    if def.isOpaque():
 #      result &= generateConditional(sizeGroups, proc(size: int): string =
 #        "opaque: array[" & $size & ", byte]\n").indent(2)

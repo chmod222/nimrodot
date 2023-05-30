@@ -56,9 +56,25 @@ macro custom_class*(def: untyped) =
   if def[2][1].kind == nnkEmpty:
     def[2][1] = newTree(nnkOfInherit, "Object".ident())
 
+  var
+    abstract: bool = false
+    virtual: bool = false
+
+  for pragma in def[0][1]:
+    if pragma.kind != nnkIdent:
+      continue
+
+    if pragma.strVal() == "gdvirtual":
+      virtual = true
+    elif pragma.strVal() == "abstract":
+      abstract = true
+
   classes[def[0][0].strVal()] = ClassRegistration(
     typeNode: def[0][0],
     parentNode: def[2][1][0],
+
+    virtual: virtual,
+    abstract: abstract,
 
     ctorFuncIdent: newNilLit(),
     dtorFuncIdent: newNilLit(),
@@ -73,16 +89,9 @@ macro custom_class*(def: untyped) =
 
   def
 
-macro abstract*(def: untyped) =
-  classes[def[0][0].strVal()].abstract = true
-
-  def
-
 # Unfortunately, "virtual" is already taken
-macro gdvirtual*(def: untyped) =
-  classes[def[0][0].strVal()].virtual = true
-
-  def
+template gdvirtual*() {.pragma.}
+template abstract*() {.pragma.}
 
 template expectClassReceiverProc(def: typed) =
   ## Helper function to assert that a proc definition with `x: var T` as the
@@ -140,37 +149,20 @@ macro classMethod*(def: typed) =
           binding: binding,
           default: identDef[^1])
 
-  classes[def.className].methods[def[0].strVal()] = MethodInfo(
-    symbol: def[0],
-    defaultValues: defaults
-  )
+  var virtual = false
 
-  def
-
-macro virtualClassMethod*(def: typed) =
-  # Virtual methods are not static by definition
-  def.expectClassReceiverProc()
-
-  var defaults: seq[DefaultedArgument] = @[]
-
-  if len(def[3]) > 1:
-    for identDef in def[3][2..^1]:
-      if identDef[^1].kind == nnkEmpty:
-        continue
-
-      for binding in identDef[0..^3]:
-        defaults &= DefaultedArgument(
-          binding: binding,
-          default: identDef[^1])
+  # macros.hasCustomPragma somehow always return false here
+  for pragma in def[4]:
+    if pragma.strVal() == "gdvirtual":
+      virtual = true
 
   classes[def.className].methods[def[0].strVal()] = MethodInfo(
     symbol: def[0],
     defaultValues: defaults,
-    virtual: true
+    virtual: virtual
   )
 
   def
-
 
 macro notification*(def: typed) =
   def.expectClassReceiverProc()

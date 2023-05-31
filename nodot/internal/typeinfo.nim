@@ -44,6 +44,27 @@ macro procReturn(p: typed): typedesc =
   else:
     genAst(R = procType[0][0]): R
 
+macro procArity(p: typed; skipVar: static[bool] = true): auto =
+  ## Given a proc type, return its arity
+  let procType = p.getTypeImpl()
+
+  procType.expectKind(nnkProcTy)
+
+  var minArgc = 0
+  var variadic = false
+
+  for arg in procType[0][1..^1]:
+    if arg[1].kind == nnkVarTy and skipVar: continue
+    if arg[1].kind == nnkBracketExpr and arg[1][0].strVal() == "varargs":
+      variadic = true
+
+      break
+
+    inc minArgc
+
+  genAst(minArgc, isVar = variadic):
+    (argCount: minArgc, variadic: isvar)
+
 macro apply(fn, args: typed): auto =
   ## Given a callable and a (named or unnamed) tuple of its arguments,
   ## invoke the callable with the given arguments.
@@ -76,65 +97,6 @@ func typeMetaData(_: typedesc[int | uint]): auto =
     GDEXTENSION_METHOD_ARGUMENT_METADATA_INT_IS_INT32
   else:
     GDEXTENSION_METHOD_ARGUMENT_METADATA_INT_IS_INT64
-
-# The variant module and all builtins already declare `variantTypeId` so that
-# we can map all manner of types into variants, but we also need to be able
-# to go back from a variant type ID into a specific binary type that we then
-# may downcast.
-
-# Any numeric gets widened into the largest we could receive and then
-# casted back down, as we hope that Godot did respect our metadata.
-template mapBuiltinType(_: typedesc[SomeInteger]): auto = int64
-template mapBuiltinType(_: typedesc[SomeFloat]): auto = float64
-
-# Objects are all the same on the binary level (as far as GDExt is concerned)
-template mapBuiltinType[T: AnyObject](_: typedesc[T]): auto = T
-
-# The builtins just map back to themselves
-template mapBuiltinType(_: typedesc[bool]): auto = bool
-template mapBuiltinType(_: typedesc[Variant]): auto = Variant
-
-template mapBuiltinType(_: typedesc[Nil | void]): auto = Nil
-template mapBuiltinType(_: typedesc[Signal]): auto = Signal
-template mapBuiltinType(_: typedesc[Callable]): auto = Callable
-template mapBuiltinType(_: typedesc[String]): auto = String
-template mapBuiltinType(_: typedesc[Quaternion]): auto = Quaternion
-template mapBuiltinType(_: typedesc[PackedFloat64Array]): auto = PackedFloat64Array
-template mapBuiltinType(_: typedesc[Dictionary]): auto = Dictionary
-template mapBuiltinType(_: typedesc[Array]): auto = Array
-template mapBuiltinType(_: typedesc[StringName]): auto = StringName
-template mapBuiltinType(_: typedesc[Color]): auto = Color
-template mapBuiltinType(_: typedesc[PackedStringArray]): auto = PackedStringArray
-template mapBuiltinType(_: typedesc[Array]): auto = Array
-template mapBuiltinType(_: typedesc[PackedInt32Array]): auto = PackedInt32Array
-template mapBuiltinType(_: typedesc[Vector3i]): auto = Vector3i
-template mapBuiltinType(_: typedesc[Basis]): auto = Basis
-template mapBuiltinType(_: typedesc[NodePath]): auto = NodePath
-template mapBuiltinType(_: typedesc[PackedFloat32Array]): auto = PackedFloat32Array
-template mapBuiltinType(_: typedesc[RID]): auto = RID
-template mapBuiltinType(_: typedesc[Vector2]): auto = Vector2
-template mapBuiltinType(_: typedesc[Rect2i]): auto = Rect2i
-template mapBuiltinType(_: typedesc[PackedVector2Array]): auto = PackedVector2Array
-template mapBuiltinType(_: typedesc[AABB]): auto = AABB
-template mapBuiltinType(_: typedesc[Vector4]): auto = Vector4
-template mapBuiltinType(_: typedesc[Vector4i]): auto = Vector4i
-template mapBuiltinType(_: typedesc[Nil]): auto = Nil
-template mapBuiltinType(_: typedesc[Vector2i]): auto = Vector2i
-template mapBuiltinType(_: typedesc[Plane]): auto = Plane
-template mapBuiltinType(_: typedesc[Transform2D]): auto = Transform2D
-template mapBuiltinType(_: typedesc[Transform3D]): auto = Transform3D
-template mapBuiltinType(_: typedesc[Vector3]): auto = Vector3
-template mapBuiltinType(_: typedesc[PackedColorArray]): auto = PackedColorArray
-template mapBuiltinType(_: typedesc[PackedVector3Array]): auto = PackedVector3Array
-template mapBuiltinType(_: typedesc[PackedByteArray]): auto = PackedByteArray
-template mapBuiltinType(_: typedesc[Projection]): auto = Projection
-template mapBuiltinType(_: typedesc[Rect2]): auto = Rect2
-template mapBuiltinType(_: typedesc[PackedInt64Array]): auto = PackedInt64Array
-
-# If we did not hit any overload, there is a gap in our coverage and we must
-# handle that.
-template mapBuiltinType[T](_: typedesc[T]) =
-  {.error: "generic mapBuiltinType invoked".}
 
 # TODO: We need some more complex type converters. For most of these we can
 #       simply blit over whatever Godot gives us, but for things like Ref[T]

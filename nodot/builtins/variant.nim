@@ -17,6 +17,14 @@ type
     argument*: int32
     expected*: Type
 
+  VariantCastException* = object of CatchableError
+    source*: Type
+    target*: Type
+
+  VariantConvertException* = object of CatchableError
+    source*: Type
+    target*: Type
+
 proc newVariant*(): Variant =
   gdInterfacePtr.variant_new_nil(addr result)
 
@@ -27,19 +35,14 @@ proc newVariant*[T](`from`: T): Variant =
   when T is Variant:
     `from`
   else:
+    type Bt = mapBuiltinType T
+
     var fromType {.global.} = gdInterfacePtr.get_variant_from_type_constructor(
-      cast[GDExtensionVariantType](T.variantTypeId()))
+      cast[GDExtensionVariantType](Bt.variantTypeId()))
 
-    fromType(addr result, unsafeAddr `from`)
+    let fromCasted: Bt = maybeDowncast[Bt](`from`)
 
-proc castTo*[T](self: Variant; _: typedesc[T]): T =
-  when T is Variant:
-    self
-  else:
-    var toType {.global.} = gdInterfacePtr.get_variant_to_type_constructor(
-      cast[GDExtensionVariantType](T.variantTypeId()))
-
-    toType(addr result, unsafeAddr self)
+    fromType(addr result, unsafeAddr fromCasted)
 
 template `%`*(p: typed): Variant = p.newVariant()
 
@@ -222,26 +225,6 @@ proc hashCompare*(a, b: Variant): bool =
 converter booleanize*(self: Variant): bool =
   gdInterfacePtr.variant_booleanize(cast[GDExtensionConstVariantPtr](unsafeAddr self)) != 0
 
-# Needs testing
-iterator items*(self: Variant): Variant =
-  let selfPtr = cast[GDExtensionConstVariantPtr](unsafeAddr self)
-
-  var iter, item: Variant;
-  var isValid: GDExtensionBool;
-
-  discard gdInterfacePtr.variant_iter_init(
-    selfPtr,
-    cast[GDExtensionVariantPtr](addr iter),
-    addr isValid)
-
-  while isValid == 1:
-    gdInterfacePtr.variant_iter_get(selfPtr, addr iter, addr item, addr isValid)
-
-    yield self[item.castTo(int64)]
-
-    if gdInterfacePtr.variant_iter_next(selfPtr, addr iter, addr isValid) == 0:
-      break
-
 proc duplicate*(self: Variant; deep: bool = true): Variant =
   gdInterfacePtr.variant_duplicate(
     cast[GDExtensionConstVariantPtr](unsafeAddr self),
@@ -281,7 +264,7 @@ proc typeName*(ty: Type): String =
     cast[GDExtensionVariantType](ty),
     cast[GDExtensionStringPtr](addr result))
 
-proc canConvertertTo*(a, b: Type; strict: bool = false): bool =
+proc canConvertTo*(a, b: Type; strict: bool = false): bool =
   if strict:
     gdInterfacePtr.variant_can_convert_strict(
       cast[GDExtensionVariantType](a),
@@ -290,6 +273,83 @@ proc canConvertertTo*(a, b: Type; strict: bool = false): bool =
     gdInterfacePtr.variant_can_convert(
       cast[GDExtensionVariantType](a),
       cast[GDExtensionVariantType](b)) != 0
+
+proc castTo*[T](self: Variant; _: typedesc[T]): T =
+  when T is Variant:
+    self
+  else:
+    type Bt = mapBuiltinType T
+
+    if self.getType() != Type(Bt.variantTypeId.ord):
+      var exc = newException(VariantCastException,
+        "cannot cast variant of type " & $self.getType() & " to " & $Type(Bt.variantTypeId.ord))
+
+      exc.source = self.getType()
+      exc.target = Type(Bt.variantTypeId.ord)
+
+      raise exc
+
+
+    let toType {.global.} = gdInterfacePtr.get_variant_to_type_constructor(
+      cast[GDExtensionVariantType](Bt.variantTypeId()))
+
+    var resultVarType: Bt
+
+    toType(
+      cast[GDExtensionTypePtr](addr resultVarType),
+      cast[GDExtensionVariantPtr](unsafeAddr self))
+
+    return maybeDowncast[T](resultVarType)
+
+proc convertTo*[T](self: Variant; _: typedesc[T]; strict: bool = true): T =
+  when T is Variant:
+    self
+  else:
+    type Bt = mapBuiltinType T
+
+    if not self.getType().canConvertTo(Type(Bt.variantTypeId.ord), strict):
+      var exc = newException(VariantConvertException,
+        "cannot convert variant of type " & $self.getType() & " to " & $Type(Bt.variantTypeId.ord))
+
+      exc.source = self.getType()
+      exc.target = Type(Bt.variantTypeId.ord)
+
+      raise exc
+
+    var temp: Variant
+    var args = [addr self]
+    var error: GDExtensionCallError
+
+    gdInterfacePtr.variant_construct(
+      Bt.variantTypeId(),
+      cast[GDExtensionVariantPtr](addr temp),
+      cast[ptr GDExtensionVariantPtr](addr args),
+      1,
+      addr error)
+
+    error.raiseMeMaybe()
+
+    return temp.castTo(T)
+
+# Needs testing
+iterator items*(self: Variant): Variant =
+  let selfPtr = cast[GDExtensionConstVariantPtr](unsafeAddr self)
+
+  var iter, item: Variant;
+  var isValid: GDExtensionBool;
+
+  discard gdInterfacePtr.variant_iter_init(
+    selfPtr,
+    cast[GDExtensionVariantPtr](addr iter),
+    addr isValid)
+
+  while isValid == 1:
+    gdInterfacePtr.variant_iter_get(selfPtr, addr iter, addr item, addr isValid)
+
+    yield self[item.castTo(int64)]
+
+    if gdInterfacePtr.variant_iter_next(selfPtr, addr iter, addr isValid) == 0:
+      break
 
 template invokeInner(operator: GDExtensionVariantOperator; a, b: untyped) =
   var isValid: GDExtensionBool;

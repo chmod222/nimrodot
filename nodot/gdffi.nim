@@ -127,8 +127,8 @@ func genArgsList(prototype: NimNode; argc: ptr int; ignoreFirst: bool = false): 
     for formalArg in formalArgs[0..^3]:
       inc argc[]
 
-      result.add quote do:
-        pointer(unsafeAddr `formalArg`)
+      result.add genAst(formalArg) do:
+        pointer(unsafeAddr formalArg)
 
 func getNameFromProto(proto: NimNode): string =
   if proto[0].kind in {nnkIdent, nnkSym}:
@@ -175,28 +175,28 @@ macro gd_utility*(hash: static[int64]; prototype: untyped) =
   result = prototype
 
   if varArgs.isNone():
-    result[^1] = quote do:
-      var p {.global.} = getUtilityFunctionPtr(`functionName`, `hash`)
-      var argPtrs: array[`argc`, GDExtensionConstTypePtr] = `args`
+    result[^1] = genAst(functionName, hash, args, argc, resultPtr) do:
+      var p {.global.} = getUtilityFunctionPtr(functionName, hash)
+      var argPtrs: array[argc, GDExtensionConstTypePtr] = args
 
       p(
-        cast[GDExtensionTypePtr](`resultPtr`),
+        cast[GDExtensionTypePtr](resultPtr),
         cast[ptr GDExtensionConstTypePtr](addr argPtrs),
-        cint(`argc`))
+        cint(argc))
   else:
     let varArgId = varArgs.unsafeGet()[0]
 
-    result[^1] = quote do:
-      var p {.global.} = getUtilityFunctionPtr(`functionName`, `hash`)
-      var argPtrs = @`args`
+    result[^1] = genAst(functionName, hash, args, argc, varArgId, resultPtr) do:
+      var p {.global.} = getUtilityFunctionPtr(functionName, hash)
+      var argPtrs = @args
 
-      for i in 0..high(`varArgId`):
-        argPtrs &= pointer(unsafeAddr `varArgId`[i])
+      for i in 0..high(varArgId):
+        argPtrs &= pointer(unsafeAddr varArgId[i])
 
       p(
-        cast[GDExtensionTypePtr](`resultPtr`),
+        cast[GDExtensionTypePtr](resultPtr),
         cast[ptr GDExtensionConstTypePtr](addr argPtrs[0]),
-        cint(`argc` + len(`varArgId`)))
+        cint(argc + len(varArgId)))
 
 # Builtins (Variant)
 
@@ -208,11 +208,11 @@ macro gd_builtin_ctor*(ty: typed; idx: static[int]; prototype: untyped) =
   let args = prototype.genArgsList(addr argc)
 
   result = prototype
-  result[^1] = quote do:
+  result[^1] = genAst(ty, idx, args, argc, result = ident"result") do:
     var p {.global.} = gdInterfacePtr.variant_get_ptr_constructor(
-      `ty`.variantTypeId, int32(`idx`))
+      ty.variantTypeId, int32(idx))
 
-    var argPtrs: array[`argc`, GDExtensionConstTypePtr] = `args`
+    var argPtrs: array[argc, GDExtensionConstTypePtr] = args
 
     p(addr result, cast[ptr GDExtensionConstTypePtr](addr argPtrs))
 
@@ -222,11 +222,11 @@ macro gd_builtin_dtor*(ty: typed; prototype: untyped) =
   let selfPtr = prototype.resolveSelf().reducePtr()
 
   result = prototype
-  result[^1] = quote do:
+  result[^1] = genAst(ty, selfPtr) do:
     var p {.global.} = gdInterfacePtr.variant_get_ptr_destructor(
-      `ty`.variantTypeId)
+      ty.variantTypeId)
 
-    p(cast[GDExtensionTypePtr](`selfPtr`))
+    p(cast[GDExtensionTypePtr](selfPtr))
 
 
 macro gd_builtin_method*(ty: typed; hash: static[int64]; prototype: untyped) =
@@ -246,33 +246,33 @@ macro gd_builtin_method*(ty: typed; hash: static[int64]; prototype: untyped) =
   result = prototype
 
   if varArgs.isNone():
-    result[^1] = quote do:
-      var p {.global.} = getBuiltinMethodPtr[`ty`](`functionName`, `hash`)
-      var argPtrs: array[`argc`, GDExtensionConstTypePtr] = `args`
+    result[^1] = genAst(ty, functionName, hash, argc, args, selfPtr, resultPtr) do:
+      var p {.global.} = getBuiltinMethodPtr[ty](functionName, hash)
+      var argPtrs: array[argc, GDExtensionConstTypePtr] = args
 
       p(
-        cast[GDExtensionTypePtr](`selfPtr`),
+        cast[GDExtensionTypePtr](selfPtr),
         cast[ptr GDExtensionConstTypePtr](addr argPtrs),
-        cast[GDExtensionTypePtr](`resultPtr`),
-        cint(`argc`))
+        cast[GDExtensionTypePtr](resultPtr),
+        cint(argc))
   else:
     let varArgId = varArgs.unsafeGet()[0]
 
-    result[^1] = quote do:
+    result[^1] = genAst(ty, functionName, hash, argc, args, varArgId, selfPtr, resultPtr) do:
       var p {.global.} = block:
-        var gdFuncName = `functionName`.toGodotStringName()
+        var gdFuncName = functionName.toGodotStringName()
 
-        gdInterfacePtr.variant_get_ptr_builtin_method(`ty`.variantTypeId, addr gdFuncName, `hash`)
+        gdInterfacePtr.variant_get_ptr_builtin_method(ty.variantTypeId, addr gdFuncName, hash)
 
-      var argPtrs = @`args`
+      var argPtrs = @args
 
-      for i in 0..high(`varArgId`):
-        argPtrs &= pointer(unsafeAddr `varArgId`[i])
+      for i in 0..high(varArgId):
+        argPtrs &= pointer(unsafeAddr varArgId[i])
 
       p(
-        cast[GDExtensionTypePtr](`resultPtr`),
+        cast[GDExtensionTypePtr](resultPtr),
         cast[ptr GDExtensionConstTypePtr](addr argPtrs[0]),
-        cint(`argc` + len(`varArgId`)))
+        cint(argc + len(varArgId)))
 
 macro gd_builtin_set*(ty: typed; prototype: untyped) =
   let propertyName = prototype[0][1][0].strVal()
@@ -317,13 +317,13 @@ macro gd_builtin_index_get*(ty: typed; prototype: untyped) =
   let resultPtr = prototype.resolveReturn().reducePtr()
 
   result = prototype
-  result[^1] = quote do:
-    var p {.global.} = gdInterfacePtr.`fn`(`ty`.variantTypeId)
+  result[^1] = genAst(fn, ty, selfPtr, idxType, idxNode, resultPtr) do:
+    var p {.global.} = gdInterfacePtr.fn(ty.variantTypeId)
 
     p(
-      cast[GDExtensionConstTypePtr](`selfPtr`),
-      cast[`idxType`](`idxNode`),
-      cast[GDExtensionTypePtr](`resultPtr`))
+      cast[GDExtensionConstTypePtr](selfPtr),
+      cast[idxType](idxNode),
+      cast[GDExtensionTypePtr](resultPtr))
 
 macro gd_builtin_index_set*(ty: typed; prototype: untyped) =
   var fn: NimNode
@@ -336,13 +336,13 @@ macro gd_builtin_index_set*(ty: typed; prototype: untyped) =
   let valId = prototype[3][^1][^3]
 
   result = prototype
-  result[^1] = quote do:
-    var p {.global.} = gdInterfacePtr.`fn`(`ty`.variantTypeId)
+  result[^1] = genAst(fn, ty, selfPtr, idxType, idxNode, valId) do:
+    var p {.global.} = gdInterfacePtr.fn(ty.variantTypeId)
 
     p(
-      cast[GDExtensionConstTypePtr](`selfPtr`),
-      cast[`idxType`](`idxNode`),
-      cast[GDExtensionConstTypePtr](unsafeAddr `valId`))
+      cast[GDExtensionConstTypePtr](selfPtr),
+      cast[idxType](idxNode),
+      cast[GDExtensionConstTypePtr](unsafeAddr valId))
 
 func toOperatorId(oper: string; unary: bool): GDExtensionVariantOperator =
   case oper
@@ -390,13 +390,13 @@ macro gd_builtin_operator*(ty: typed; prototype: untyped) =
   let operatorId = rawOperatorName.toOperatorId(isUnary)
 
   result = prototype
-  result[^1] = quote do:
+  result[^1] = genAst(operatorId, lhsTyp, rhsTyp, lhsPtr, rhsPtr, result = ident"result") do:
     var p {.global.} = gdInterfacePtr.variant_get_ptr_operator_evaluator(
-        cast[GDExtensionVariantOperator](`operatorId`),
-        `lhsTyp`.variantTypeId,
-        `rhsTyp`.variantTypeId)
+        cast[GDExtensionVariantOperator](operatorId),
+        lhsTyp.variantTypeId,
+        rhsTyp.variantTypeId)
 
-    p(`lhsPtr`, `rhsPtr`, addr result)
+    p(lhsPtr, rhsPtr, addr result)
 
 
 # Classes
@@ -406,8 +406,8 @@ macro gd_class_ctor*(prototype: untyped) =
   let selfTypeStr = selfType.strVal()
 
   result = prototype
-  result[^1] = quote do:
-    var name = `selfTypeStr`.toGodotStringName()
+  result[^1] = genAst(selfTypeStr, result = ident"result") do:
+    var name = selfTypeStr.toGodotStringName()
 
     result.opaque = gdInterfacePtr.classdb_construct_object(addr name)
 
@@ -415,13 +415,13 @@ macro gd_class_singleton*(prototype: untyped) =
   let selfType = prototype.resolveReturn().reduceType()
 
   result = prototype
-  result[^1] = quote do:
-    var name = `selfType`.gdClassName()
+  result[^1] = genAst(selfType) do:
+    var name = selfType.gdClassName()
 
-    cast[`selfType`](gdInterfacePtr.object_get_instance_binding(
+    cast[selfType](gdInterfacePtr.object_get_instance_binding(
       gdInterfacePtr.global_get_singleton(addr name),
       gdTokenPtr,
-      `selfType`.gdInstanceBindingCallbacks))
+      selfType.gdInstanceBindingCallbacks))
 
 template constructResultObject[T](dest: typedesc[Ref[T]]; raw: T): Ref[T] =
   newRefShallow(raw)

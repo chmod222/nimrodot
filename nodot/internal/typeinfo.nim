@@ -1,6 +1,58 @@
 # This is a very boilerplatey part that would poison the readability of the
 # classdb module, so we yank it in.
 
+# Generic helpers
+macro procArgsUnnamed(p: typed; skipVar: static[bool] = true): typedesc =
+  ## Given a proc type, generate an unnamed tuple where each element
+  ## corresponds to an argument.
+  let procType = p.getTypeImpl()
+
+  procType.expectKind(nnkProcTy)
+
+  result = nnkTupleConstr.newTree()
+
+  for arg in procType[0][1..^1]:
+    if arg[1].kind == nnkVarTy and skipVar: continue
+
+    result &= arg[1]
+
+macro procArgs(p: typed; skipVar: static[bool] = true): typedesc =
+  ## Given a proc type, generate a tuple where each element
+  ## corresponds to an argument with that name.
+  let procType = p.getTypeImpl()
+
+  procType.expectKind(nnkProcTy)
+
+  result = nnkTupleTy.newTree()
+
+  for arg in procType[0][1..^1]:
+    if arg[1].kind == nnkVarTy and skipVar: continue
+
+    result &= newIdentDefs(
+      newTree(nnkAccQuoted, arg[0]),
+      arg[1],
+      newEmptyNode())
+
+macro procReturn(p: typed): typedesc =
+  ## Given a proc type, return its return type (or typedesc[void])
+  let procType = p.getTypeImpl()
+
+  procType.expectKind(nnkProcTy)
+
+  if procType[0][0].kind == nnkEmpty:
+    genAst: void
+  else:
+    genAst(R = procType[0][0]): R
+
+macro apply(fn, args: typed): auto =
+  ## Given a callable and a (named or unnamed) tuple of its arguments,
+  ## invoke the callable with the given arguments.
+  result = newTree(nnkCall, fn)
+
+  for arg in args:
+    result.add(if arg.kind == nnkExprColonExpr: arg[1] else: arg)
+
+
 # Property Helpers
 func propertyHint(_: typedesc): auto = phiNone
 func propertyUsage(_: typedesc): auto = pufDefault

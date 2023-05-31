@@ -736,56 +736,44 @@ proc invoke_method*[T, M](userdata: pointer;
 # to send us bad data. If it does, we do the same thing it does when we do that:
 # crash.
 macro callFunc(
-    self: typed;
     def: typed;
-    argsArray: ptr UncheckedArray[GDExtensionConstTypePtr];
-    returnPtr: GDExtensionTypePtr = nil) =
+    self: typed;
+    argsArray: ptr UncheckedArray[GDExtensionConstTypePtr]): auto =
   let typedFunc = def.getTypeInst()[0]
 
-  var i = 0
   var argsStart = 1
 
-  var call = newTree(nnkCall, def)
-  var returnType = if typedFunc[0].kind == nnkEmpty:
-    none NimNode
-  else:
-    some typedFunc[0]
+  result = newTree(nnkCall, def)
 
   if typedFunc[1][^2].kind == nnkVarTy:
-    call &= newTree(nnkBracketExpr, self)
+    result &= newTree(nnkBracketExpr, self)
 
     inc argsStart
 
-  for arg in typedFunc[argsStart..^1]:
+  for i, arg in enumerate(typedFunc[argsStart..^1]):
     let argBody = if arg[^2].isVarArg():
-      # Cannot be done using ptrcall unless argsArray[...] keeps going until nil (check)
+      # Cannot be done using ptrcall, so we leave it empty in case
+      # a vararg function is ever called using ptrcall.
       break
     else:
       genAst(T = arg[^2], argsArray, i):
         T(argFromPointer[mapBuiltinType(typeOf T)](argsArray[i]))
 
-    inc i
-
-    call &= argBody
-
-  if returnType.isSome():
-    result = genAst(R = returnType.unsafeGet(), returnPtr, call):
-      cast[ptr mapBuiltinType(typeOf R)](returnPtr)[] = call
-  else:
-    # ?: set ret[] to %nil?
-    result = call
+    result &= argBody
 
 proc invoke_method_ptrcall*[T, M](
     userdata: pointer;
     instance: GDExtensionClassInstancePtr;
     args: ptr GDExtensionConstTypePtr;
-    ret: GDExtensionTypePtr) {.cdecl.} =
+    returnPtr: GDExtensionTypePtr) {.cdecl.} =
 
   let nimInst = cast[ptr T](instance)
   let callable = cast[M](userdata)
   let argArray = cast[ptr UncheckedArray[GDExtensionConstTypePtr]](args)
 
-  nimInst.callFunc(callable, argArray, ret)
+  type R = callable.procReturn()
+
+  cast[ptr mapBuiltinType(typeOf R)](returnPtr)[] = callable.callFunc(nimInst, argArray)
 
 # Murmur3-32 is used to calculate the method hashes, we may need to replicate those.
 func murmur3(input: uint32; seed: uint32 = 0x7F07C65): uint32 =

@@ -1,5 +1,7 @@
 import ../nodot
-import ./builtins/types/[variant, stringname]
+import ./builtins/types
+import ./builtins/variant
+import ./builtins/"string" as str
 import ./classes/types/"object"
 import ./enums
 
@@ -143,7 +145,7 @@ macro dtor*(def: typed) =
   def
 
 macro classMethod*(def: typed) =
-  def.expectPossiblyStaticClassReceiverProc()
+  def.expectClassReceiverProc()
 
   var defaults: seq[DefaultedArgument] = @[]
 
@@ -167,7 +169,30 @@ macro classMethod*(def: typed) =
   classes[def.className].methods[def[0].strVal()] = MethodInfo(
     symbol: def[0],
     defaultValues: defaults,
-    virtual: virtual
+    virtual: virtual,
+  )
+
+  def
+
+macro staticMethod*(T: typedesc; def: typed) =
+  def.expectKind(nnkProcDef)
+
+  var defaults: seq[DefaultedArgument] = @[]
+
+  if len(def[3]) > 1:
+    for identDef in def[3][2..^1]:
+      if identDef[^1].kind == nnkEmpty:
+        continue
+
+      for binding in identDef[0..^3]:
+        defaults &= DefaultedArgument(
+          binding: binding,
+          default: identDef[^1])
+
+  classes[$T].methods[def[0].strVal()] = MethodInfo(
+    symbol: def[0],
+    defaultValues: defaults,
+    virtual: false,
   )
 
   def
@@ -294,31 +319,7 @@ macro constant*(T: typedesc; def: typed) =
 
   def
 
-func typeMetaData(_: typedesc): auto = GDEXTENSION_METHOD_ARGUMENT_METADATA_NONE
-
-func propertyHint(_: typedesc): auto = phiNone
-func propertyUsage(_: typedesc): auto = pufDefault
-
-func typeMetaData(_: typedesc[int | uint]): auto =
-  if (sizeOf int) == 4:
-    GDEXTENSION_METHOD_ARGUMENT_METADATA_INT_IS_INT32
-  else:
-    GDEXTENSION_METHOD_ARGUMENT_METADATA_INT_IS_INT64
-
-func typeMetaData(_: typedesc[int8]): auto = GDEXTENSION_METHOD_ARGUMENT_METADATA_INT_IS_INT8
-func typeMetaData(_: typedesc[int16]): auto = GDEXTENSION_METHOD_ARGUMENT_METADATA_INT_IS_INT16
-func typeMetaData(_: typedesc[int32]): auto = GDEXTENSION_METHOD_ARGUMENT_METADATA_INT_IS_INT32
-func typeMetaData(_: typedesc[int64]): auto = GDEXTENSION_METHOD_ARGUMENT_METADATA_INT_IS_INT64
-
-func typeMetaData(_: typedesc[uint8]): auto = GDEXTENSION_METHOD_ARGUMENT_METADATA_INT_IS_UINT8
-func typeMetaData(_: typedesc[uint16]): auto = GDEXTENSION_METHOD_ARGUMENT_METADATA_INT_IS_UINT16
-func typeMetaData(_: typedesc[uint32]): auto = GDEXTENSION_METHOD_ARGUMENT_METADATA_INT_IS_UINT32
-func typeMetaData(_: typedesc[uint64]): auto = GDEXTENSION_METHOD_ARGUMENT_METADATA_INT_IS_UINT64
-
-func typeMetaData(_: typedesc[float32]): auto = GDEXTENSION_METHOD_ARGUMENT_METADATA_REAL_IS_FLOAT
-func typeMetaData(_: typedesc[float64 | float]): auto = GDEXTENSION_METHOD_ARGUMENT_METADATA_REAL_IS_DOUBLE
-
-func variantTypeId[T](_: typedesc[varargs[T]]): auto = GDEXTENSION_VARIANT_TYPE_NIL
+include internal/typeinfo
 
 proc create_callback(token, instance: pointer): pointer {.cdecl.} = nil
 proc free_callback(token, instance, binding: pointer) {.cdecl.} = discard
@@ -641,13 +642,13 @@ type
 proc gdClassName(_: typedesc): ptr StringName = staticStringName("")
 
 
-macro getReturnInfo(m: typed): Option[ReturnValueInfo] =
-  let typeInfo = m.getTypeInst()
+macro getReturnInfo(M: typed): Option[ReturnValueInfo] =
+  let typeInfo = M.getType()[1]
 
-  if typeInfo[0][0].kind == nnkEmpty:
+  if typeInfo[1].strVal() == "void":
     return genAst: none ReturnValueInfo
 
-  return genAst(R = typeInfo[0][0].getType()):
+  return genAst(R = typeInfo[1].getType()):
     some (
       returnValue: GDExtensionPropertyInfo(
         `type`: variantTypeId(typeOf R),
@@ -659,21 +660,21 @@ macro getReturnInfo(m: typed): Option[ReturnValueInfo] =
       ),
       returnMeta: typeMetaData(typeOf R))
 
-macro getMethodFlags(m: typed): static[set[GDExtensionClassMethodFlags]] =
-  let typedM = m.getTypeInst()
-  let firstParam = typedM[0][1]
-  let lastParam = typedM[0][^1]
+macro getMethodFlags(M: typed): static[set[GDExtensionClassMethodFlags]] =
+  let typedM = M.getType()[1]
+  let firstParam = typedM[2]
+  let lastParam = typedM[^1]
 
   var setLiteral = newTree(nnkCurly,
     "GDEXTENSION_METHOD_FLAGS_DEFAULT".ident())
 
-  # TODO: Determine FLAG_CONST and FLAG_VIRTUAL
+  # TODO: Determine FLAG_CONST
 
-  if firstParam[^2].kind == nnkSym:
+  if firstParam.kind != nnkVarTy:
     setLiteral &= "GDEXTENSION_METHOD_FLAG_STATIC".ident()
 
-  if lastParam[^2].kind == nnkBracketExpr and
-      lastParam[^2][0].strVal() == "varargs":
+  if lastParam.kind == nnkBracketExpr and
+      lastParam[0].strVal() == "varargs":
     setLiteral &= "GDEXTENSION_METHOD_FLAG_VARARG".ident()
 
   genAst(setLiteral):
@@ -682,8 +683,8 @@ macro getMethodFlags(m: typed): static[set[GDExtensionClassMethodFlags]] =
 func isVarArg(m: NimNode): bool =
   result = m.kind == nnkBracketExpr and m[0].strVal() == "varargs"
 
-macro getProcProps(m: typed): auto =
-  let typedM = m.getTypeInst()
+macro getProcProps(M: typed): auto =
+  let typedM = M.getTypeInst()
 
   var argc = 0
 
@@ -722,19 +723,142 @@ macro getProcProps(m: typed): auto =
       pargs: procArgs,
       pmeta: procArgsMeta)
 
-proc registerMethod*[T, M: proc](
+proc invoke_method*[T, M](userdata: pointer;
+                          instance: GDExtensionClassInstancePtr;
+                          args: ptr GDExtensionConstVariantPtr;
+                          argc: GDExtensionInt;
+                          ret: GDExtensionVariantPtr;
+                          error: ptr GDExtensionCallError) {.cdecl.} =
+
+  discard
+
+# This is highly unsafe of course, but at this point we have to trust Godot not
+# to send us bad data. If it does, we do the same thing it does when we do that:
+# crash.
+macro callFunc(
+    self: typed;
+    def: typed;
+    argsArray: ptr UncheckedArray[GDExtensionConstTypePtr];
+    returnPtr: GDExtensionTypePtr = nil) =
+  let typedFunc = def.getTypeInst()[0]
+
+  var i = 0
+  var argsStart = 1
+
+  var call = newTree(nnkCall, def)
+  var returnType = if typedFunc[0].kind == nnkEmpty:
+    none NimNode
+  else:
+    some typedFunc[0]
+
+  if typedFunc[1][^2].kind == nnkVarTy:
+    call &= newTree(nnkBracketExpr, self)
+
+    inc argsStart
+
+  for arg in typedFunc[argsStart..^1]:
+    let argBody = if arg[^2].isVarArg():
+      # Cannot be done using ptrcall unless argsArray[...] keeps going until nil (check)
+      break
+    else:
+      genAst(T = arg[^2], argsArray, i):
+        T(argFromPointer[mapBuiltinType(typeOf T)](argsArray[i]))
+
+    inc i
+
+    call &= argBody
+
+  if returnType.isSome():
+    result = genAst(R = returnType.unsafeGet(), returnPtr, call):
+      cast[ptr mapBuiltinType(typeOf R)](returnPtr)[] = call
+  else:
+    # ?: set ret[] to %nil?
+    result = call
+
+proc invoke_method_ptrcall*[T, M](
+    userdata: pointer;
+    instance: GDExtensionClassInstancePtr;
+    args: ptr GDExtensionConstTypePtr;
+    ret: GDExtensionTypePtr) {.cdecl.} =
+
+  let nimInst = cast[ptr T](instance)
+  let callable = cast[M](userdata)
+  let argArray = cast[ptr UncheckedArray[GDExtensionConstTypePtr]](args)
+
+  nimInst.callFunc(callable, argArray, ret)
+
+# Murmur3-32 is used to calculate the method hashes, we may need to replicate those.
+func murmur3(input: uint32; seed: uint32 = 0x7F07C65): uint32 =
+  var input = input
+  var seed = seed
+
+  input *= 0xCC9E2D51'u32
+  input = (input shl 15) or (input shr 17)
+  input *= 0x1B873593'u32
+
+  seed = seed xor input
+  seed = (seed shl 13) or (seed shr 19)
+  seed = seed * 5 + 0xE6546b64'u32
+
+  seed
+
+func fmix32(input: uint32): uint32 =
+  result = input
+
+  result = result xor (result shr 16)
+  result *= 0x85EBCA6B'u32
+  result = result xor (result shr 13)
+  result *= 0xC2B2AE35'u32
+  result = result xor (result shr 16)
+
+proc calculateHash(
+    returnValue: Option[GDExtensionPropertyInfo];
+    args: openArray[GDExtensionPropertyInfo];
+    defaults: openArray[Variant];
+    flags: uint32): uint32 =
+  result = murmur3(uint32(returnValue.isSome()))
+  result = murmur3(uint32(args.len()), result)
+
+  if returnValue.isSome():
+    let clsName = cast[ptr StringName](returnValue.unsafeGet().class_name)
+
+    result = murmur3(uint32(returnValue.unsafeGet().`type`), result)
+
+    if (clsName != staticStringName("")):
+      result = murmur3(uint32(clsName[].String.hash()), result)
+
+  for arg in args:
+    let clsName = cast[ptr StringName](arg.class_name)
+
+    result = murmur3(uint32(arg.`type`), result)
+
+    if (clsName != staticStringName("")):
+      result = murmur3(uint32(clsName[].String.hash()), result)
+
+  result = murmur3(uint32(len(defaults)), result)
+
+  for default in defaults:
+    result = murmur3(uint32(default.hash()), result)
+
+  result = murmur3(uint32((GDEXTENSION_METHOD_FLAG_CONST.ord and flags) > 0), result)
+  result = murmur3(uint32((GDEXTENSION_METHOD_FLAG_VARARG.ord and flags) > 0), result)
+  result = fmix32(result)
+
+proc registerMethod*[T](
     name: string;
-    callable: static[M];
+    callable: auto;
     defaults: auto;
     virtual: bool = false) =
   var className: StringName = $T
   var methodName: StringName = name
 
+  type M = typeOf callable
+
   # TODO: The {.classMethod.} macros ensures every proc here has a typedesc[T] or var T
   #       parameter at the first position. This function does not, but it can still be
   #       called manually if need be, so we must verify here as well.
 
-  var returnInfo = callable.getReturnInfo()
+  var returnInfo = M.getReturnInfo()
   var rvInfo: ptr GDExtensionPropertyInfo = nil
   var rvMeta = GDEXTENSION_METHOD_ARGUMENT_METADATA_NONE
   var defaultFlags = uint32 GDEXTENSION_METHOD_FLAGS_DEFAULT
@@ -742,14 +866,18 @@ proc registerMethod*[T, M: proc](
   if virtual:
     defaultFlags = defaultFlags or (uint32 GDEXTENSION_METHOD_FLAG_VIRTUAL)
 
-  for flag in callable.getMethodFlags():
+  {.warning[HoleEnumConv]: off.}
+
+  for flag in M.getMethodFlags():
     defaultFlags = defaultFlags or (uint32 flag)
+
+  {.warning[HoleEnumConv]: on.}
 
   if returnInfo.isSome():
     rvInfo = addr returnInfo.unsafeGet().returnValue
     rvMeta = returnInfo.unsafeGet().returnMeta
 
-  let argProperties = callable.getProcProps()
+  let argProperties = M.getProcProps()
 
   var defaultVariants = newSeq[Variant]()
 
@@ -761,12 +889,20 @@ proc registerMethod*[T, M: proc](
     for i in 0..high(defaultVariants):
       cast[ptr GDExtensionVariantPtr](addr defaultVariants[i])
 
+  # Highly useful for debugging despite not 100% match Godot's yet
+  #
+  #var hash = calculateHash(
+  #  returnInfo.map(proc(s: ReturnValueInfo): GDExtensionPropertyInfo = s.returnValue),
+  #  argProperties.pargs,
+  #  defaultVariants,
+  #  defaultFlags)
+
   var methodInfo = GDExtensionClassMethodInfo(
     name: addr methodName,
-    method_userdata: nil,
+    method_userdata: callable,
 
-    call_func: nil,
-    ptrcall_func: nil,
+    call_func: invoke_method[T, M],
+    ptrcall_func: invoke_method_ptrcall[T, M],
     method_flags: defaultFlags,
 
     has_return_value: GDExtensionBool(returnInfo.isSome()),
@@ -877,17 +1013,14 @@ macro register*() =
     result.add(classReg)
 
     for methodName, methodInfo in regInfo.methods:
-      let methodType = methodInfo.symbol.getTypeInst()
-
       let methodReg = genAst(
           T = regInfo.typeNode,
           methodName,
-          methodType,
           methodSymbol = methodInfo.symbol,
           defaultArgs = methodInfo.generateDefaultsTuple,
           isVirtual = methodInfo.virtual):
 
-        registerMethod[T, methodType](methodName, methodSymbol, defaultArgs, isVirtual)
+        registerMethod[T](methodName, methodSymbol, defaultArgs, isVirtual)
 
       result.add(methodReg)
 

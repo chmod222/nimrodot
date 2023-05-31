@@ -648,7 +648,7 @@ macro getReturnInfo(M: typed): Option[ReturnValueInfo] =
   if typeInfo[1].strVal() == "void":
     return genAst: none ReturnValueInfo
 
-  return genAst(R = typeInfo[1].getType()):
+  return genAst(R = typeInfo[1]):
     some (
       returnValue: GDExtensionPropertyInfo(
         `type`: variantTypeId(typeOf R),

@@ -93,6 +93,7 @@ template mapBuiltinType[T: AnyObject](_: typedesc[T]): auto = T
 template mapBuiltinType(_: typedesc[bool]): auto = bool
 template mapBuiltinType(_: typedesc[Variant]): auto = Variant
 
+template mapBuiltinType(_: typedesc[Nil | void]): auto = Nil
 template mapBuiltinType(_: typedesc[Signal]): auto = Signal
 template mapBuiltinType(_: typedesc[Callable]): auto = Callable
 template mapBuiltinType(_: typedesc[String]): auto = String

@@ -773,7 +773,10 @@ proc invoke_method_ptrcall*[T, M](
 
   type R = callable.procReturn()
 
-  cast[ptr mapBuiltinType(typeOf R)](returnPtr)[] = callable.callFunc(nimInst, argArray)
+  when R is void:
+    callable.callFunc(nimInst, argArray)
+  else:
+    cast[ptr mapBuiltinType(typeOf R)](returnPtr)[] = callable.callFunc(nimInst, argArray)
 
 # Murmur3-32 is used to calculate the method hashes, we may need to replicate those.
 func murmur3(input: uint32; seed: uint32 = 0x7F07C65): uint32 =

@@ -17,12 +17,6 @@ type
     argument*: int32
     expected*: Type
 
-proc castTo*[T](self: Variant; _: typedesc[T]): T =
-  var toType {.global.} = gdInterfacePtr.get_variant_to_type_constructor(
-    cast[GDExtensionVariantType](T.variantTypeId()))
-
-  toType(addr result, unsafeAddr self)
-
 proc newVariant*(): Variant =
   gdInterfacePtr.variant_new_nil(addr result)
 
@@ -30,10 +24,22 @@ proc newVariant*(`from`: Variant): Variant =
   gdInterfacePtr.variant_new_copy(addr result, unsafeAddr `from`)
 
 proc newVariant*[T](`from`: T): Variant =
-  var fromType {.global.} = gdInterfacePtr.get_variant_from_type_constructor(
-    cast[GDExtensionVariantType](T.variantTypeId()))
+  when T is Variant:
+    `from`
+  else:
+    var fromType {.global.} = gdInterfacePtr.get_variant_from_type_constructor(
+      cast[GDExtensionVariantType](T.variantTypeId()))
 
-  fromType(addr result, unsafeAddr `from`)
+    fromType(addr result, unsafeAddr `from`)
+
+proc castTo*[T](self: Variant; _: typedesc[T]): T =
+  when T is Variant:
+    self
+  else:
+    var toType {.global.} = gdInterfacePtr.get_variant_to_type_constructor(
+      cast[GDExtensionVariantType](T.variantTypeId()))
+
+    toType(addr result, unsafeAddr self)
 
 template `%`*(p: typed): Variant = p.newVariant()
 

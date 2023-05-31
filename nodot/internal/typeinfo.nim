@@ -56,6 +56,7 @@ macro apply(fn, args: typed): auto =
 # Property Helpers
 func propertyHint(_: typedesc): auto = phiNone
 func propertyUsage(_: typedesc): auto = pufDefault
+func propertyUsage(_: typedesc[Variant]): auto = ord(pufDefault) or ord(pufNilIsVariant)
 
 # Type Metadata Helpers
 func typeMetaData(_: typedesc): auto = GDEXTENSION_METHOD_ARGUMENT_METADATA_NONE

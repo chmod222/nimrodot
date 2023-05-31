@@ -661,20 +661,20 @@ macro getReturnInfo(M: typed): Option[ReturnValueInfo] =
       returnMeta: typeMetaData(typeOf R))
 
 macro getMethodFlags(M: typed): static[set[GDExtensionClassMethodFlags]] =
-  let typedM = M.getType()[1]
-  let firstParam = typedM[2]
-  let lastParam = typedM[^1]
+  let typedM = M.getType()[1].getTypeImpl()
+  let firstParam = typedM[0][1]
+  let lastParam = typedM[0][^1]
 
   var setLiteral = newTree(nnkCurly,
     "GDEXTENSION_METHOD_FLAGS_DEFAULT".ident())
 
   # TODO: Determine FLAG_CONST
 
-  if firstParam.kind != nnkVarTy:
+  if firstParam[1].kind != nnkVarTy:
     setLiteral &= "GDEXTENSION_METHOD_FLAG_STATIC".ident()
 
-  if lastParam.kind == nnkBracketExpr and
-      lastParam[0].strVal() == "varargs":
+  if lastParam[1].kind == nnkBracketExpr and
+      lastParam[1][0].strVal() == "varargs":
     setLiteral &= "GDEXTENSION_METHOD_FLAG_VARARG".ident()
 
   genAst(setLiteral):
@@ -684,7 +684,7 @@ func isVarArg(m: NimNode): bool =
   result = m.kind == nnkBracketExpr and m[0].strVal() == "varargs"
 
 macro getProcProps(M: typed): auto =
-  let typedM = M.getTypeInst()
+  let typedM = M.getType()[1].getTypeImpl()
 
   var argc = 0
 

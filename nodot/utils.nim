@@ -1,5 +1,5 @@
 import ./builtins/types/"string"
-import ../nodot
+import ./interface_ptrs
 
 proc `$`*(str: String): string =
   let strLen = gdInterfacePtr.string_to_utf8_chars(unsafeAddr str, nil, 0)

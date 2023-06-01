@@ -12,9 +12,6 @@
 import ../../builtins/types/stringname
 import ../../helpers
 import ../../ffi
-#  if def.isRefcounted:
-import ../../ref_helper
-#  end if
 
 #  if def.inherits.isSome():
 #    let parentName = def.inherits.unsafeGet()
@@ -74,12 +71,20 @@ const $cleanDupe*: $enumName = $enumName($value)
 #      end if
 #    end if
 #  end for
-#  if def.isRefcounted:
+#  if def.isRefcounted and apiDef.classTypes[def.inherits.unsafeGet].isRefCounted:
 
+import ../../ref_helper
 #    var parent = apiDef.classTypes[def.inherits.unsafeGet]
 #
 #    while parent.isRefCounted:
-converter to$parent.name*(x: sink Ref[$def.name]): Ref[$parent.name] = x.castRef($parent.name)
+#      if parent.name != def.inherits.unsafeGet:
+#        let parentModule = $parent.name.moduleName().safeImport()
+import ../types/$parentModule
+#        end if
+
+converter to$parent.name*(x: sink Ref[$def.name]): Ref[$parent.name] =
+  x.castRef($parent.name)
+
 #      parent = apiDef.classTypes[parent.inherits.unsafeGet]
 #    end while
 #  end if

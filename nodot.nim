@@ -3,29 +3,20 @@ import std/macros
 proc NimMain() {.cdecl, importc.}
 
 import nodot/ffi
-
-var gdInterfacePtr*: ptr GDExtensionInterface = nil
-var gdTokenPtr*: GDExtensionClassLibraryPtr = nil
-
-
-import nodot/helpers
+import nodot/interface_ptrs
 import nodot/ref_helper
 import nodot/classes/types/"object"
-import nodot/builtins/types/[stringname, "string"]
+import nodot/helpers
 
 export ref_helper
 export ffi
+export interface_ptrs
+export helpers
 
 proc getSingleton*[T: Object](name: string): T =
   var name = name.toGodotStringName()
 
   T(opaque: gdInterfacePtr.global_get_singleton(addr name))
-
-converter toStringName*(src: string): StringName =
-  src.toGodotStringName
-
-converter toString*(src: string): String =
-  src.toGodotString
 
 macro godotHooks*(
     name: static[string];

@@ -8,8 +8,6 @@
 #proc generate*(): string =
 #  result = autogenDisclaimer()
 #
-import ../ffi
-
 import ./types/[
 #  for i, builtin in enumerate(apiDef.builtin_classes):
 #    if builtin.isNativeClass():
@@ -30,5 +28,3 @@ import ./types/[
 #    let moduleName = builtin.moduleName().safeIdent()
 export $moduleName
 #  end for
-
-import ../classes/types/"object"

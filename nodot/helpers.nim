@@ -1,4 +1,4 @@
-import ../nodot
+import ./interface_ptrs
 import ./ffi
 import ./builtins/types/[stringname, "string"]
 
@@ -21,6 +21,11 @@ proc toGodotStringName*(native: string): StringName =
   gdInterfacePtr.string_new_with_utf8_chars(addr interm, cstring(native))
   result = stringToStringName(interm)
 
+converter toStringName*(src: string): StringName =
+  src.toGodotStringName
+
+converter toString*(src: string): String =
+  src.toGodotString
 
 proc makeInstanceFunctions*[T](_: typedesc[T]): GDExtensionInstanceBindingCallbacks =
   type

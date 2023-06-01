@@ -1,3 +1,4 @@
+import ./interface_ptrs
 import ../nodot
 import ./builtins/types
 import ./builtins/variant

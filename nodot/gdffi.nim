@@ -1,8 +1,6 @@
 import std/[macros, genasts, options]
 
-import ../nodot
-import ../nodot/ref_helper
-
+import ./interface_ptrs
 import ./ffi
 import ./helpers
 
@@ -423,12 +421,6 @@ macro gd_class_singleton*(prototype: untyped) =
       gdTokenPtr,
       selfType.gdInstanceBindingCallbacks))
 
-template constructResultObject[T](dest: typedesc[Ref[T]]; raw: T): Ref[T] =
-  newRefShallow(raw)
-
-template constructResultObject[T](dest: typedesc[T]; raw: T): T =
-  raw
-
 macro gd_class_method*(hash: static[int64]; prototype: untyped) =
   var argc: int
   let args = prototype.genArgsList(addr argc, true)
@@ -452,6 +444,14 @@ macro gd_class_method*(hash: static[int64]; prototype: untyped) =
       cast[GDExtensionObjectPtr](selfPtr),
       cast[ptr GDExtensionConstTypePtr](addr fixedArgs),
       cast[GDExtensionTypePtr](resultPtr))
+
+import ../nodot/ref_helper
+
+template constructResultObject[T](dest: typedesc[Ref[T]]; raw: T): Ref[T] =
+  newRefShallow(raw)
+
+template constructResultObject[T](dest: typedesc[T]; raw: T): T =
+  raw
 
 macro gd_class_method_obj*(hash: static[int64]; prototype: untyped) =
   var argc: int

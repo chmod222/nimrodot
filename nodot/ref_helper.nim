@@ -1,5 +1,3 @@
-import nodot
-
 type
   Ref*[T] = object
     ## A managed reference to a Godot class (extension class or user defined).
@@ -9,8 +7,34 @@ type
     ## A managed, unique reference to a Godot class (extension class or user defined).
     reference: T
 
-proc upRef[T](self: var Ref[T])
-proc downRef[T](self: var Ref[T]): bool
+import ./interface_ptrs
+import ./helpers
+import ./builtins/types/stringname
+
+# Re-declare these so we don't have to cyclic import refcounted.nim.
+# XXX: KEEP IN SYNC.
+var nameRef: StringName = "reference"
+var nameDeref: StringName = "unreference"
+
+proc upRef[T](self: var Ref[T]): bool =
+  let mb {.global.} = gdInterfacePtr.classdb_get_method_bind(T.gdClassName(), addr nameRef, 2240911060)
+
+  gdInterfacePtr.object_method_bind_ptrcall(
+    mb,
+    self.reference[].opaque,
+    nil,
+    addr result)
+
+proc downRef[T](self: var Ref[T]): bool =
+  let mb {.global.} = gdInterfacePtr.classdb_get_method_bind(T.gdClassName(), addr nameDeref, 2240911060)
+
+  gdInterfacePtr.object_method_bind_ptrcall(
+    mb,
+    self.reference[].opaque,
+    nil,
+    addr result)
+
+
 
 proc `=destroy`*[T](r: var Ref[T]) =
   if r.reference == nil:
@@ -35,7 +59,7 @@ proc `=copy`*[T](dest: var Ref[T]; source: Ref[T]) =
   dest.wasMoved()
 
   dest.reference = source.reference
-  dest.upRef()
+  discard dest.upRef()
 
 proc newRefShallow*[T](reference: T): Ref[T] =
   ## Create a shallow reference to T. That is, a reference that doesn't
@@ -50,7 +74,7 @@ proc newRefShallow*[T](reference: T): Ref[T] =
 proc newRef*[T](reference: T): Ref[T] =
   ## Create a reference to T, incrementing the reference count upon doing so.
   result = newRefShallow(reference)
-  result.upRef()
+  discard result.upRef()
 
 proc castRef*[T, U](r: sink Ref[T]; _: typedesc[U]): Ref[U] =
   ## Casts a Ref[T] to a Ref[U], raising an exception in case the transition
@@ -71,22 +95,6 @@ proc castRef*[T, U](r: sink Ref[T]; _: typedesc[U]): Ref[U] =
 proc `[]`*[T](r: Ref[T]): lent T =
   ## Return a lent reference to the contained value.
   r.reference
-
-# Delay-import gdffi here so gdffi knows what Ref[T] is.
-import gdffi
-
-# Re-declare these so we don't have to cyclic import refcounted.nim.
-# XXX: KEEP IN SYNC.
-# XXX2: These need to be exported for now for some reason. TODO: investigate why that is.
-proc reference*[T](self: T): bool {.gd_class_method(2240911060).}
-proc unreference*[T](self: T): bool {.gd_class_method(2240911060).}
-
-proc upRef[T](self: var Ref[T]) =
-  discard self.reference.reference()
-
-proc downRef[T](self: var Ref[T]): bool =
-  self.reference.unreference()
-
 
 # Owned[T] implementation
 

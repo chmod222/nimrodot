@@ -2,9 +2,20 @@
 import ../../ffi
 import ../../api
 
+import ../../interface_ptrs
+
 type
   Variant* = object
     opaque: array[variantSize, byte]
+
+proc `=destroy`(v: var Variant) =
+  gdInterfacePtr.variant_destroy(unsafeAddr v)
+
+proc `=copy`(dest: var Variant; source: Variant) =
+  `=destroy`(dest)
+  dest.wasMoved()
+
+  gdInterfacePtr.variant_new_copy(addr dest, unsafeAddr source)
 
 # Enums
 type

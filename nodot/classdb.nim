@@ -1,5 +1,6 @@
-import ./interface_ptrs
 import ../nodot
+
+import ./interface_ptrs
 import ./builtins/types
 import ./builtins/variant
 import ./builtins/"string" as str

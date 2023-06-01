@@ -238,7 +238,7 @@ func safeIdent*(id: string): string =
     return "p_result"
 
   let canonicalId = if id.startsWith('_'):
-    "prot" & id
+    id[1..^1]
   else:
     id
 
@@ -667,8 +667,8 @@ proc render*(meth: ClassMethodDefinition, def: ClassDefinition | BuiltinClassDef
   if meth.is_vararg:
     args &= (bindings: @["args"], `type`: def.makeVarArgsParam())
 
-  if def is ClassDefinition:
-    result = "proc " & meth.name.safeIdent() & "*" & args.renderArgs()
+  if meth.is_virtual:
+    result = "method " & meth.name.safeIdent() & "*" & args.renderArgs()
   else:
     result = "proc " & meth.name.safeIdent() & "*" & args.renderArgs()
 

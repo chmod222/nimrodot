@@ -64,17 +64,18 @@ proc $ctorName*(): $selfType
 #    result &= "# Methods\n"
 #
 #    for meth in def.methods.unsafeGet():
-#      if meth.name.startsWith('_'):
-#        continue
-#      end if
-#
 #      let methPrototype = meth.render(def)
+#
+#      if meth.is_virtual:
+$methPrototype {.base.} = discard
+#      else:
 $methPrototype
-#  if meth.return_value.isSome() and meth.return_value.unsafeGet().`type`.isClassType:
+#        if meth.return_value.isSome() and meth.return_value.unsafeGet().`type`.isClassType:
   {.gd_class_method_obj($meth.hash).}
-#  else:
+#        else:
   {.gd_class_method($meth.hash).}
-#  end if:
+#        end if
+#      end if
 
 #    #{.gd_builtin_method($def.name, $meth.hash).}
 #

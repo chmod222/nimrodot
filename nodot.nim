@@ -6,12 +6,12 @@ import nodot/ffi
 import nodot/interface_ptrs
 import nodot/ref_helper
 import nodot/classes/types/"object"
-import nodot/helpers
+import nodot/utils
 
 export ref_helper
 export ffi
 export interface_ptrs
-export helpers
+export utils
 
 proc getSingleton*[T: Object](name: string): T =
   var name = name.toGodotStringName()

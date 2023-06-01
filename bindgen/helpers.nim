@@ -630,10 +630,8 @@ proc render*(ctor: ConstructorDefinition, def: BuiltinClassDefinition): string =
 
 proc render*(meth: ClassMethodDefinition, def: ClassDefinition | BuiltinClassDefinition; qualifyEnums: bool = true): string =
   # TODO:
-  #   - How to deal with is_virtual?
   #   - Default values
   #
-  # We always want the methods exported, no need to pretend otherwise
   var args = newSeq[CombinedArgs]()
 
   let selfType = fromSelf(def)

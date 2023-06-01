@@ -2,14 +2,14 @@ import std/[macros, genasts, options]
 
 import ./interface_ptrs
 import ./ffi
-import ./helpers
+import ./utils
 
 import ./builtins/variant
 import ./builtins/types
 
 import ./classes/types/"object"
 
-export helpers.toGodotStringName
+export utils.toGodotStringName
 
 type
   ReturnInfo = object

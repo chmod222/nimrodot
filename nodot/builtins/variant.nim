@@ -2,10 +2,8 @@
 import std/sugar
 
 import ../interface_ptrs
-import ../../nodot
 import ../ffi
 import ../utils
-import ../helpers
 import ./types/variant
 
 export variant

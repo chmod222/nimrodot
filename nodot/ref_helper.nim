@@ -8,7 +8,8 @@ type
     reference: T
 
 import ./interface_ptrs
-import ./helpers
+import ./utils
+
 import ./builtins/types/stringname
 
 # Re-declare these so we don't have to cyclic import refcounted.nim.
@@ -33,7 +34,6 @@ proc downRef[T](self: var Ref[T]): bool =
     self.reference[].opaque,
     nil,
     addr result)
-
 
 
 proc `=destroy`*[T](r: var Ref[T]) =

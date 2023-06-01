@@ -10,8 +10,7 @@
 #  result = autogenDisclaimer()
 #
 import ../../builtins/types/stringname
-import ../../helpers
-import ../../ffi
+import internal/instance_funcs
 
 #  if def.inherits.isSome():
 #    let parentName = def.inherits.unsafeGet()
@@ -29,7 +28,7 @@ type
 #  end if
 
 var instanceBindingCallbacks* = default(GDExtensionInstanceBindingCallbacks)
-var className: StringName = toGodotStringName("$def.name")
+var className: StringName = "$def.name"
 
 proc gdInstanceBindingCallbacks*(_: typedesc[$def.name]): ptr GDExtensionInstanceBindingCallbacks =
   addr instanceBindingCallbacks

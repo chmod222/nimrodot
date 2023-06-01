@@ -40,11 +40,6 @@ when isMainModule:
   let sourceRoot = projectRoot / "nodot"
   let apiFile = sourceApiFile.importApi()
 
-  # Clean previously generated files, if any
-  for builtinClass in apiFile.builtin_classes:
-    if not builtinClass.isNativeClass():
-      rmFile sourceRoot / "builtins" / builtinClass.moduleName() & ".nim"
-
   cpFile(projectRoot / "contrib/gdextension_interface.nim", sourceRoot  / "ffi.nim")
 
   helpers.apiDef = apiFile

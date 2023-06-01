@@ -662,20 +662,20 @@ macro getReturnInfo(M: typed): Option[ReturnValueInfo] =
 
 macro getMethodFlags(M: typed): static[set[GDExtensionClassMethodFlags]] =
   let typedM = M.getType()[1].getTypeImpl()
-  let firstParam = typedM[0][1]
-  let lastParam = typedM[0][^1]
 
   var setLiteral = newTree(nnkCurly,
     "GDEXTENSION_METHOD_FLAGS_DEFAULT".ident())
 
-  # TODO: Determine FLAG_CONST
+  if len(typedM[0]) > 1:
+    let firstParam = typedM[0][1]
+    let lastParam = typedM[0][^1]
 
-  if firstParam[1].kind != nnkVarTy:
-    setLiteral &= "GDEXTENSION_METHOD_FLAG_STATIC".ident()
+    if firstParam[1].kind != nnkVarTy:
+      setLiteral &= "GDEXTENSION_METHOD_FLAG_STATIC".ident()
 
-  if lastParam[1].kind == nnkBracketExpr and
-      lastParam[1][0].strVal() == "varargs":
-    setLiteral &= "GDEXTENSION_METHOD_FLAG_VARARG".ident()
+    if lastParam[1].kind == nnkBracketExpr and
+        lastParam[1][0].strVal() == "varargs":
+      setLiteral &= "GDEXTENSION_METHOD_FLAG_VARARG".ident()
 
   genAst(setLiteral):
     setLiteral
@@ -757,31 +757,32 @@ macro callFunc(
 
   result = newTree(nnkCall, def)
 
-  if typedFunc[1][^2].kind == nnkVarTy:
-    result &= newTree(nnkBracketExpr, self)
+  if len(typedFunc) > 1:
+    if typedFunc[1][^2].kind == nnkVarTy:
+      result &= newTree(nnkBracketExpr, self)
 
-    inc argsStart
+      inc argsStart
 
-  for i, arg in enumerate(typedFunc[argsStart..^1]):
-    if arg[^2].isVarArg():
-      # If we hit a varargs[T] parameter, generate a preamble statement to fill a seq[]
-      # and wrap our original result into a block statement.
-      let varArgsId = genSym(nskVar, "vargs")
+    for i, arg in enumerate(typedFunc[argsStart..^1]):
+      if arg[^2].isVarArg():
+        # If we hit a varargs[T] parameter, generate a preamble statement to fill a seq[]
+        # and wrap our original result into a block statement.
+        let varArgsId = genSym(nskVar, "vargs")
 
-      result.add varArgsId
+        result.add varArgsId
 
-      return genAst(T = arg[^2][1], start = i, argsArray, argc, varArgsId, doCall = result) do:
-        block:
-          var varArgsId = newSeqOfCap[typeOf T](argc - start)
+        return genAst(T = arg[^2][1], start = i, argsArray, argc, varArgsId, doCall = result) do:
+          block:
+            var varArgsId = newSeqOfCap[typeOf T](argc - start)
 
-          for i in start .. argc - 1:
-              varArgsId &= maybeDowncast[T](argsArray[i][].tryCastTo(mapBuiltinType(typeOf T), argPos))
-              inc argPos
+            for i in start .. argc - 1:
+                varArgsId &= maybeDowncast[T](argsArray[i][].tryCastTo(mapBuiltinType(typeOf T), argPos))
+                inc argPos
 
-          doCall
+            doCall
 
-    result.add genAst(T = arg[^2], argsArray, i) do:
-      maybeDowncast[T](argsArray[i][].tryCastTo(mapBuiltinType(typeOf T), argPos))
+      result.add genAst(T = arg[^2], argsArray, i) do:
+        maybeDowncast[T](argsArray[i][].tryCastTo(mapBuiltinType(typeOf T), argPos))
 
 proc invoke_method*[T, M](userdata: pointer;
                           instance: GDExtensionClassInstancePtr;
@@ -847,21 +848,22 @@ macro callFunc(
 
   result = newTree(nnkCall, def)
 
-  if typedFunc[1][^2].kind == nnkVarTy:
-    result &= newTree(nnkBracketExpr, self)
+  if len(typedFunc) > 1:
+    if typedFunc[1][^2].kind == nnkVarTy:
+      result &= newTree(nnkBracketExpr, self)
 
-    inc argsStart
+      inc argsStart
 
-  for i, arg in enumerate(typedFunc[argsStart..^1]):
-    let argBody = if arg[^2].isVarArg():
-      # Cannot be done using ptrcall, so we leave it empty in case
-      # a vararg function is ever called using ptrcall.
-      break
-    else:
-      genAst(T = arg[^2], argsArray, i):
-        maybeDowncast[T](argFromPointer[mapBuiltinType(typeOf T)](argsArray[i]))
+    for i, arg in enumerate(typedFunc[argsStart..^1]):
+      let argBody = if arg[^2].isVarArg():
+        # Cannot be done using ptrcall, so we leave it empty in case
+        # a vararg function is ever called using ptrcall.
+        break
+      else:
+        genAst(T = arg[^2], argsArray, i):
+          maybeDowncast[T](argFromPointer[mapBuiltinType(typeOf T)](argsArray[i]))
 
-    result &= argBody
+      result &= argBody
 
 proc invoke_method_ptrcall*[T, M](
     userdata: pointer;
@@ -959,6 +961,7 @@ proc registerMethod*[T](
   if virtual:
     defaultFlags = defaultFlags or (uint32 GDEXTENSION_METHOD_FLAG_VIRTUAL)
 
+  {.hint[ConvFromXtoItselfNotNeeded]: off.}
   {.warning[HoleEnumConv]: off.}
 
   for flag in M.getMethodFlags():
@@ -971,6 +974,8 @@ proc registerMethod*[T](
     rvMeta = returnInfo.unsafeGet().returnMeta
 
   let argProperties = M.getProcProps()
+
+  {.hint[ConvFromXtoItselfNotNeeded]: on.}
 
   var defaultVariants = newSeq[Variant]()
 

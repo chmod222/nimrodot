@@ -23,6 +23,10 @@ export $selfModuleExport
 import ../classes/$parentModuleName
 export $parentModuleNameExport
 #  end if
+#  if def.name == "Thread":
+
+type Thread = thread.Thread
+#  end if
 
 import ../gdffi
 

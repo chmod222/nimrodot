@@ -4,44 +4,51 @@ Godot 4 GDExtension API.
 
 Note that this is not yet usable for actual development.
 
-## What works:
-  - Library initialization / deinitialization hooks
+## Status:
+  [x] Library initialization / deinitialization hooks
   - Bindings of all builtin classes (`Variant`, `Vector2`, ...)
-    - Construction, deconstruction
-    - Methods
-    - Properties
-    - Index (keyed and positional)
-    - Fixed-arity and variadic calls
+    - [x] Construction, deconstruction
+    - [x] Methods
+    - [x] Properties
+    - [x] Index (keyed and positional)
+    - [x] Fixed-arity and variadic calls
 
   - Bindings of all utility functions
-    - Fixed-arity and variadic calls
+    - [x] Fixed-arity and variadic calls
 
   - Proper Godot classes:
-    - Basic usage
-    - Destruction
+    - [x] Basic usage
+    - [x] Destruction
+    - [x] Calling methods
+      - Works in principle, but further testing required to make sure every case works.
+
+  - Registering custom classes:
+    - [x] Construction, Destruction hooks
+    - Dynamic Properties (`.get`, `.set` in Godot)
+      - [x] Get/Set
+      - [x] Query revertible status and revert value
+      - [x] Query property List
+    - Methods
+      - [ ] Virtual
+      - [x] Static
+      - [x] Instance
+      - [x] Bindcall
+      - [x] ptrcall
+      - [x] Variadic
+    - [ ] Builtin Properties (`.property_name` in Godot)
+    - [ ] Signals
 
 ## What does not work:
-  - Builtin and Proper classes:
-    - Memory management for all cases
-      - `RefCounted` and manually managed objects *should* work, but currently
-         all non-refcounted objects passed into this library are assumed to be owned by it
-         and will be freed without mercy even if they are lent out references.
-    - Most likely some other things that can not be tested as of yet
+  - Memory management for all cases
+    - `RefCounted` and manually managed objects *should* work, but currently
+       all non-refcounted objects passed into this library are assumed to be owned by it
+       and will be freed without mercy even if they are lent out references.
 
-  - Registering custom classes
+  - Most likely some other things that can not be tested as of yet
 
 ## What somewhat works:
   - TypedArray[T] does not enforce the `T` or `Typed` part so far, but with some self discipline it
     will work until compile time enforcements are implemented.
-
-
-Most of the exciting stuff is now blocked on actually understanding who, and when, is
-responsible for freeing memory and calling destructors (further complicated
-by the existence of `RefCounted`) and properly mapping it to Nim. This might
-be simple or it might be difficult, unfortunately the only canonical source
-of documentation is [godot-cpp](https://github.com/godotengine/godot-cpp) which
-involves mentally parsing and understanding a lot of macro heavy C++ and that
-is not fun.
 
 ## How it works:
 

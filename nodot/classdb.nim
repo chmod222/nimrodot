@@ -110,20 +110,6 @@ template expectClassReceiverProc(def: typed) =
   def[3][1][^2].expectKind(nnkVarTy)
   def[3][1][^2][0].expectKind(nnkSym)
 
-template expectPossiblyStaticClassReceiverProc(def: typed) =
-  ## Helper function to assert that a proc definition with `x: var T` or `_: typedesc[T]`
-  ## as the first parameter has been provided.
-  def.expectKind(nnkProcDef)
-  def[3][1][^2].expectKind({nnkVarTy, nnkBracketExpr})
-
-  if def[3][1][^2].kind == nnkVarTy:
-    # x: var T
-    def[3][1][^2][0].expectKind(nnkSym)
-  else:
-    # _: typedesc[T]
-    def[3][1][^2][0].expectIdent("typedesc")
-    def[3][1][^2][1].expectKind(nnkSym)
-
 template className(def: typed): string =
   if def[3][1][^2].kind == nnkVarTy:
     def[3][1][^2][0].strVal()

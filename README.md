@@ -5,7 +5,8 @@ Godot 4 GDExtension API.
 Note that this is not yet usable for actual development.
 
 ## Status:
-  [x] Library initialization / deinitialization hooks
+  - [x] Library initialization / deinitialization hooks
+
   - Bindings of all builtin classes (`Variant`, `Vector2`, ...)
     - [x] Construction, deconstruction
     - [x] Methods

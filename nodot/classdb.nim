@@ -731,7 +731,7 @@ proc tryCastTo*[T](arg: Variant; _: typedesc[T]; argPos: var int32): T =
   inc argPos
 
 # Call a function with a number of Variant pointers (bindcall)
-macro callFunc(
+macro callBindFunc(
     def: typed;
     self: typed;
     argsArray: ptr UncheckedArray[ptr Variant];
@@ -770,6 +770,38 @@ macro callFunc(
       result.add genAst(T = arg[^2], argsArray, i) do:
         maybeDowncast[T](argsArray[i][].tryCastTo(mapBuiltinType(typeOf T), argPos))
 
+# Call a function with a number of builtin pointers (ptrcall)
+#
+# This is highly unsafe of course, but at this point we have to trust Godot not
+# to send us bad data. If it does, we do the same thing it does when we do that:
+# crash.
+macro callPtrFunc(
+    def: typed;
+    self: typed;
+    argsArray: ptr UncheckedArray[GDExtensionConstTypePtr]): auto =
+  let typedFunc = def.getTypeInst()[0]
+
+  var argsStart = 1
+
+  result = newTree(nnkCall, def)
+
+  if len(typedFunc) > 1:
+    if typedFunc[1][^2].kind == nnkVarTy:
+      result &= newTree(nnkBracketExpr, self)
+
+      inc argsStart
+
+    for i, arg in enumerate(typedFunc[argsStart..^1]):
+      let argBody = if arg[^2].isVarArg():
+        # Cannot be done using ptrcall, so we leave it empty in case
+        # a vararg function is ever called using ptrcall.
+        break
+      else:
+        genAst(T = arg[^2], argsArray, i):
+          maybeDowncast[T](argFromPointer[mapBuiltinType(typeOf T)](argsArray[i]))
+
+      result &= argBody
+
 proc invoke_method*[T, M](userdata: pointer;
                           instance: GDExtensionClassInstancePtr;
                           args: ptr GDExtensionConstVariantPtr;
@@ -806,9 +838,9 @@ proc invoke_method*[T, M](userdata: pointer;
 
   try:
     when R is void:
-      callable.callFunc(nimInst, argArray, argc, argPos)
+      callable.callBindFunc(nimInst, argArray, argc, argPos)
     else:
-      returnValue[] = %maybeDowncast[mapBuiltinType R](callable.callFunc(nimInst, argArray, argc, argPos))
+      returnValue[] = %maybeDowncast[mapBuiltinType R](callable.callBindFunc(nimInst, argArray, argc, argPos))
 
   except CallMarshallingError as cme:
     error[].error = GDEXTENSION_CALL_ERROR_INVALID_ARGUMENT
@@ -818,38 +850,6 @@ proc invoke_method*[T, M](userdata: pointer;
   except CatchableError:
     # For the lack of a better option
     error[].error = GDEXTENSION_CALL_ERROR_INVALID_METHOD
-
-# Call a function with a number of builtin pointers (ptrcall)
-#
-# This is highly unsafe of course, but at this point we have to trust Godot not
-# to send us bad data. If it does, we do the same thing it does when we do that:
-# crash.
-macro callFunc(
-    def: typed;
-    self: typed;
-    argsArray: ptr UncheckedArray[GDExtensionConstTypePtr]): auto =
-  let typedFunc = def.getTypeInst()[0]
-
-  var argsStart = 1
-
-  result = newTree(nnkCall, def)
-
-  if len(typedFunc) > 1:
-    if typedFunc[1][^2].kind == nnkVarTy:
-      result &= newTree(nnkBracketExpr, self)
-
-      inc argsStart
-
-    for i, arg in enumerate(typedFunc[argsStart..^1]):
-      let argBody = if arg[^2].isVarArg():
-        # Cannot be done using ptrcall, so we leave it empty in case
-        # a vararg function is ever called using ptrcall.
-        break
-      else:
-        genAst(T = arg[^2], argsArray, i):
-          maybeDowncast[T](argFromPointer[mapBuiltinType(typeOf T)](argsArray[i]))
-
-      result &= argBody
 
 proc invoke_method_ptrcall*[T, M](
     userdata: pointer;
@@ -864,9 +864,9 @@ proc invoke_method_ptrcall*[T, M](
   type R = callable.procReturn()
 
   when R is void:
-    callable.callFunc(nimInst, argArray)
+    callable.callPtrFunc(nimInst, argArray)
   else:
-    cast[ptr mapBuiltinType(typeOf R)](returnPtr)[] = callable.callFunc(nimInst, argArray)
+    cast[ptr mapBuiltinType(typeOf R)](returnPtr)[] = callable.callPtrFunc(nimInst, argArray)
 
 # Murmur3-32 is used to calculate the method hashes, we may need to replicate those.
 func murmur3(input: uint32; seed: uint32 = 0x7F07C65): uint32 =

@@ -115,7 +115,6 @@ template mapBuiltinType*(_: typedesc[String]): auto = String
 template mapBuiltinType*(_: typedesc[Quaternion]): auto = Quaternion
 template mapBuiltinType*(_: typedesc[PackedFloat64Array]): auto = PackedFloat64Array
 template mapBuiltinType*(_: typedesc[Dictionary]): auto = Dictionary
-template mapBuiltinType*(_: typedesc[Array]): auto = Array
 template mapBuiltinType*(_: typedesc[StringName]): auto = StringName
 template mapBuiltinType*(_: typedesc[Color]): auto = Color
 template mapBuiltinType*(_: typedesc[PackedStringArray]): auto = PackedStringArray

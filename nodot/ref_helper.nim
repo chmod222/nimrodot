@@ -20,21 +20,21 @@ proc getClassMethodBindPtr(cls, meth: static[string]; hash: static[int64]): GDEx
 
   gdInterfacePtr.classdb_get_method_bind(addr gdClassName, addr gdMethName, hash)
 
-proc upRef[T](self: var Ref[T]): bool =
+proc upRef[T](self: T): bool =
   let mb {.global.} = getClassMethodBindPtr("RefCounted", "reference", 2240911060)
 
   gdInterfacePtr.object_method_bind_ptrcall(
     mb,
-    self.reference[].opaque,
+    self.opaque,
     nil,
     addr result)
 
-proc downRef[T](self: var Ref[T]): bool =
+proc downRef[T](self: T): bool =
   let mb {.global.} = getClassMethodBindPtr("RefCounted", "unreference", 2240911060)
 
   gdInterfacePtr.object_method_bind_ptrcall(
     mb,
-    self.reference[].opaque,
+    self.opaque,
     nil,
     addr result)
 
@@ -43,7 +43,7 @@ proc `=destroy`*[T](r: var Ref[T]) =
   if r.reference == nil:
     return
 
-  if r.downRef():
+  if r[].downRef():
     gdInterfacePtr.object_destroy(r.reference.opaque)
 
     r.reference = nil
@@ -58,11 +58,11 @@ proc `=copy`*[T](dest: var Ref[T]; source: Ref[T]) =
   if dest.reference == source.reference:
     return
 
+  discard source[].upRef()
+
   `=destroy`(dest)
   dest.wasMoved()
-
   dest.reference = source.reference
-  discard dest.upRef()
 
 proc newRefShallow*[T](reference: T): Ref[T] =
   ## Create a shallow reference to T. That is, a reference that doesn't
@@ -77,7 +77,7 @@ proc newRefShallow*[T](reference: T): Ref[T] =
 proc newRef*[T](reference: T): Ref[T] =
   ## Create a reference to T, incrementing the reference count upon doing so.
   result = newRefShallow(reference)
-  discard result.upRef()
+  discard result[].upRef()
 
 proc castRef*[T, U](r: sink Ref[T]; _: typedesc[U]): Ref[U] =
   ## Casts a Ref[T] to a Ref[U], raising an exception in case the transition

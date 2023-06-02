@@ -9,16 +9,19 @@ type
 
 import ./interface_ptrs
 import ./utils
-
+import ./ffi
 import ./builtins/types/stringname
 
-# Re-declare these so we don't have to cyclic import refcounted.nim.
+# Re-declare these so we don't have to cyclic import refcounted.nim and gdffi.
 # XXX: KEEP IN SYNC.
-var nameRef: StringName = "reference"
-var nameDeref: StringName = "unreference"
+proc getClassMethodBindPtr(cls, meth: static[string]; hash: static[int64]): GDExtensionMethodBindPtr =
+  var gdClassName = cls.toGodotStringName()
+  var gdMethName = meth.toGodotStringName()
+
+  gdInterfacePtr.classdb_get_method_bind(addr gdClassName, addr gdMethName, hash)
 
 proc upRef[T](self: var Ref[T]): bool =
-  let mb {.global.} = gdInterfacePtr.classdb_get_method_bind(T.gdClassName(), addr nameRef, 2240911060)
+  let mb {.global.} = getClassMethodBindPtr("RefCounted", "reference", 2240911060)
 
   gdInterfacePtr.object_method_bind_ptrcall(
     mb,
@@ -27,7 +30,7 @@ proc upRef[T](self: var Ref[T]): bool =
     addr result)
 
 proc downRef[T](self: var Ref[T]): bool =
-  let mb {.global.} = gdInterfacePtr.classdb_get_method_bind(T.gdClassName(), addr nameDeref, 2240911060)
+  let mb {.global.} = getClassMethodBindPtr("RefCounted", "unreference", 2240911060)
 
   gdInterfacePtr.object_method_bind_ptrcall(
     mb,

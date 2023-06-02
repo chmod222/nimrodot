@@ -52,7 +52,11 @@ const $constName*: int = $constVal
 #  if def.is_instantiable and not def.is_singleton:
 #    result &= "# Constructor\n"
 #
+#  if def.is_refcounted and def.is_instantiable:
+proc $ctorName*(): Ref[$selfType]
+#  elif def.is_instantiable:
 proc $ctorName*(): $selfType
+#  end if
   {.gd_class_ctor.}
 
 #  elif def.is_singleton:

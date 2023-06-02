@@ -398,19 +398,29 @@ macro gd_builtin_operator*(ty: typed; prototype: untyped) =
 
 
 # Classes
+import ../nodot/ref_helper
+
+template constructResultObject[T](dest: typedesc[Ref[T]]; raw: T): Ref[T] =
+  newRefShallow(raw)
+
+template constructResultObject[T](dest: typedesc[T]; raw: T): T =
+  raw
 
 macro gd_class_ctor*(prototype: untyped) =
   let selfType = prototype.resolveReturn().reduceType()
+  let fullSelfType = prototype.resolveReturn().fullType
   let selfTypeStr = selfType.strVal()
 
   result = prototype
-  result[^1] = genAst(selfType, selfTypeStr, result = ident"result") do:
+  result[^1] = genAst(selfType, selfTypeStr, fullSelfType, result = ident"result") do:
     var name = selfTypeStr.toGodotStringName()
 
-    cast[selfType](gdInterfacePtr.object_get_instance_binding(
-      gdInterfacePtr.classdb_construct_object(addr name),
-      gdTokenPtr,
-      selfType.gdInstanceBindingCallbacks))
+    constructResultObject(
+      fullSelfType,
+      cast[selfType](gdInterfacePtr.object_get_instance_binding(
+        gdInterfacePtr.classdb_construct_object(addr name),
+        gdTokenPtr,
+        selfType.gdInstanceBindingCallbacks)))
 
 macro gd_class_singleton*(prototype: untyped) =
   let selfType = prototype.resolveReturn().reduceType()
@@ -447,14 +457,6 @@ macro gd_class_method*(hash: static[int64]; prototype: untyped) =
       cast[GDExtensionObjectPtr](selfPtr),
       cast[ptr GDExtensionConstTypePtr](addr fixedArgs),
       cast[GDExtensionTypePtr](resultPtr))
-
-import ../nodot/ref_helper
-
-template constructResultObject[T](dest: typedesc[Ref[T]]; raw: T): Ref[T] =
-  newRefShallow(raw)
-
-template constructResultObject[T](dest: typedesc[T]; raw: T): T =
-  raw
 
 macro gd_class_method_obj*(hash: static[int64]; prototype: untyped) =
   var argc: int

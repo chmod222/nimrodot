@@ -516,6 +516,11 @@ proc renderImportList*(
   var outHints: set[DependencyHint] = {}
   var references = dependant.referencedTypes(options, outHints)
 
+  when dependant is ClassDefinition:
+    # Include Ref[T] is we're going to generate a constructor
+    if dependant.is_refcounted and dependant.is_instantiable:
+      outHints.incl dhCoreClasses
+
   if ignore.isSome():
     references.excl ignore.unsafeGet()
 

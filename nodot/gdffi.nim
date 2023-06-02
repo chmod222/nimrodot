@@ -404,10 +404,13 @@ macro gd_class_ctor*(prototype: untyped) =
   let selfTypeStr = selfType.strVal()
 
   result = prototype
-  result[^1] = genAst(selfTypeStr, result = ident"result") do:
+  result[^1] = genAst(selfType, selfTypeStr, result = ident"result") do:
     var name = selfTypeStr.toGodotStringName()
 
-    result.opaque = gdInterfacePtr.classdb_construct_object(addr name)
+    cast[selfType](gdInterfacePtr.object_get_instance_binding(
+      gdInterfacePtr.classdb_construct_object(addr name),
+      gdTokenPtr,
+      selfType.gdInstanceBindingCallbacks))
 
 macro gd_class_singleton*(prototype: untyped) =
   let selfType = prototype.resolveReturn().reduceType()

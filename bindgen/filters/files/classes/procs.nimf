@@ -32,8 +32,7 @@ import ../gdffi
 
 #  result &= def.renderImportList(
 #    {roProperties, roMethods, roStructFields, roConstructors, roIndexes, roOperators},
-#    "../builtins/types/", "./types/", "../enums", "../native_structs",
-#     def.inherits)
+#     "nodot/classes", def.inherits)
 #
 #  if def.constants.isSome:
 #    result &= "# Constants\n"

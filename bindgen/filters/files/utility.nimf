@@ -14,7 +14,7 @@
 import ./gdffi
 #
 
-#  result &= funcs.renderImportList({}, "./builtins/types/", "./classes/types/", "./enums", "./native_structs")
+#  result &= funcs.renderImportList({}, "nodot")
 #  for fn in funcs:
 $fn.render
   {.gd_utility($fn.hash).}

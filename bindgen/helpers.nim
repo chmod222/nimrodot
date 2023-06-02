@@ -100,6 +100,7 @@ func isReservedWord*(ident: string): bool =
 type
   DependencyHint* = enum
     dhGlobalEnums
+    dhGdffi
     dhCoreClasses
 
   TypedEnum* = tuple
@@ -295,6 +296,8 @@ type
     native_structs*: OrderedSet[string]
 
   DependencyResolveOption* = enum
+    roNoNatives
+
     # Builtins + Classes
     roProperties
     roMethods
@@ -505,13 +508,19 @@ type
     bindings: seq[string]
     `type`: GodotType
 
+import std/os
 
 proc renderImportList*(
     dependant: SomeDependant;
     options: set[DependencyResolveOption];
-    builtinsPrefix, classPrefix, enumPath, nativesPath, ignore: Option[string] = none string): string =
+    selfDir: string;
+    ignore: Option[string] = none string): string =
 
   result = ""
+
+  let relativeRootPath = "nodot".relativePath(selfDir) & "/"
+  let classesPath = "nodot/classes/types".relativePath(selfDir) & "/"
+  let builtinsPath = "nodot/builtins/types".relativePath(selfDir) & "/"
 
   var outHints: set[DependencyHint] = {}
   var references = dependant.referencedTypes(options, outHints)
@@ -535,60 +544,36 @@ proc renderImportList*(
       apiDef.typeDeps[dependant.name].incl reference
       apiDef.typeDeps[dependant.name].incl reference.moduleName()
 
-  if enumPath.isSome():
-    if dhGlobalEnums in outHints:      result &= "import " & enumPath.get() & "\n"
+  if dhGlobalEnums in outHints:      result &= "import " & relativeRootPath & "enums\n"
+  if dhCoreClasses in outHints:      result &= "import " & relativeRootPath & "ref_helper\n"
+  if dhGdffi in outHints:            result &= "import " & relativeRootPath & "gdffi\n"
 
-  if dhCoreClasses in outHints:        result &= "import ../ref_helper\n"
+  if roNoNatives notin options:
+    if len(sorted.native_structs) > 0: result &= "import " & relativeRootPath & "native_structs\n"
 
-  if nativesPath.isSome():
-    if len(sorted.native_structs) > 0: result &= "import " & nativesPath.get() & "\n"
-
-  if builtinsPrefix.isSome() and len(sorted.builtins) > 0:
+  if len(sorted.builtins) > 0:
     if len(result) > 0:
       result &= "\n"
 
     result &= "import\n"
 
     for i, builtin in enumerate(sets.items(sorted.builtins)):
-      result &= "  " & builtinsPrefix.unsafeGet() & builtin.moduleName().safeImport()
+      result &= "  " & builtinsPath & builtin.moduleName().safeImport()
       result &= (if i < len(sorted.builtins) - 1: ",\n" else: "\n")
 
 
-  if classPrefix.isSome() and len(sorted.classes) > 0:
+  if len(sorted.classes) > 0:
     if len(result) > 0:
       result &= "\n"
 
     result &= "import\n"
 
     for i, class in enumerate(sets.items(sorted.classes)):
-      result &= "  " & classPrefix.unsafeGet() & class.moduleName().safeImport()
+      result &= "  " & classesPath & class.moduleName().safeImport()
       result &= (if i < len(sorted.classes) - 1: ",\n" else: "\n")
 
   if len(result) > 0:
     result &= "\n"
-
-proc renderImportList*(
-    dependant: SomeDependant;
-    options: set[DependencyResolveOption];
-    builtinsPrefix, classPrefix, enumPath, nativesPath: string;
-    ignore: Option[string] = none string): string =
-  renderImportList(dependant, options,
-    some builtinsPrefix,
-    some classPrefix,
-    some enumPath,
-    some nativesPath,
-    ignore)
-
-proc renderImportList*(
-    dependant: SomeDependant;
-    options: set[DependencyResolveOption];
-    builtinsPrefix, classPrefix, enumPath: string): string =
-  renderImportList(dependant, options,
-    some builtinsPrefix,
-    some classPrefix,
-    some enumPath,
-    none string,
-    none string)
 
 proc renderGetter*(def: ClassDefinition; property: ClassPropertyDefinition): string =
   let getterMethod = def.getMethod(property.getter)

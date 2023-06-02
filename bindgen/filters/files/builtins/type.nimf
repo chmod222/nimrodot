@@ -23,7 +23,7 @@ import ../../api
 
 #  end if
 #
-#  result &= def.renderImportList({roStructFields}, "./", "../../classes/types", "../../enums", "../../native_structs")
+#  result &= def.renderImportList({roStructFields}, "nodot/builtins/types")
 #
 #  # if not def.isOpaque(apiDef):
 #  #   for members, cfg in memberGroups:

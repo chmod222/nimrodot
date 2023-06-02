@@ -28,8 +28,6 @@ export $parentModuleNameExport
 type Thread = thread.Thread
 #  end if
 
-import ../gdffi
-
 #  result &= def.renderImportList(
 #    {roProperties, roMethods, roStructFields, roConstructors, roIndexes, roOperators},
 #     "nodot/classes", def.inherits)

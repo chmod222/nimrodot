@@ -508,7 +508,7 @@ type
     bindings: seq[string]
     `type`: GodotType
 
-import std/os
+import std/[os, sequtils]
 
 proc renderImportList*(
     dependant: SomeDependant;
@@ -529,6 +529,13 @@ proc renderImportList*(
     # Include Ref[T] is we're going to generate a constructor
     if dependant.is_refcounted and dependant.is_instantiable:
       outHints.incl dhCoreClasses
+
+    if dependant.is_instantiable or # constructor needs gdffi
+        dependant.is_singleton or # singleton query too
+        (dependant.methods.isSome() and # methods too, unless all are virtual
+          not dependant.methods.unsafeGet().all(proc(m: auto): auto = m.is_virtual)):
+      outHints.incl dhGdffi
+
 
   if ignore.isSome():
     references.excl ignore.unsafeGet()

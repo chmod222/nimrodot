@@ -579,6 +579,9 @@ proc registerClass*[T, P](
   var className: StringName = $T
   var parentClassName: StringName = $P
 
+  when T isnot AnyObject:
+    {.warning: "T really should derive (directly or indrectly) from `Object`.".}
+
   # Needs static lifetime, so {.global.}
   var rcr {.global.}: RuntimeClassRegistration[T] = RuntimeClassRegistration[T](
     ctor: ctorFunc,

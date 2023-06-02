@@ -4,7 +4,6 @@
 #import ./api/"build_config.nimf"
 #
 #import ../../helpers
-#import ../../api
 #
 #proc generate*(): string =
 #  result = autogenDisclaimer()

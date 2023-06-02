@@ -1,6 +1,4 @@
-import std/[sets, options, tables]
-
-import jsony
+import std/[sets, options, tables, json]
 
 type
   Header* = object
@@ -93,7 +91,7 @@ type
     is_static*: bool
     is_virtual*: bool
 
-    hash*: uint
+    hash*: Option[uint]
 
     return_value*: Option[ClassMethodReturn]
     arguments*: Option[seq[FunctionArgument]]
@@ -128,7 +126,7 @@ type
   ClassPropertyDefinition* = object
     `type`*: string
     name*: string
-    setter*: string
+    setter*: Option[string]
     getter*: string
 
   SignalDefinition* = object
@@ -210,7 +208,7 @@ proc fill_caches(api: var Api) =
     api.classTypes[class.name] = class
 
 proc importApi*(path: string): Api =
-  let dump = fromJson(readFile(path), ApiDump)
+  let dump = parseJson(readFile(path)).to(ApiDump)
 
   result = Api(inner: dump)
   result.fill_caches()

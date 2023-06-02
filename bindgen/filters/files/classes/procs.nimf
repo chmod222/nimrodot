@@ -71,15 +71,15 @@ proc $ctorName*(): $selfType
 $methPrototype {.base.} = discard
 #      else:
 $methPrototype
+#        let hash = meth.hash.unsafeGet()
+#
 #        if meth.return_value.isSome() and meth.return_value.unsafeGet().`type`.isClassType:
-  {.gd_class_method_obj($meth.hash).}
+  {.gd_class_method_obj($hash).}
 #        else:
-  {.gd_class_method($meth.hash).}
+  {.gd_class_method($hash).}
 #        end if
 #      end if
 
-#    #{.gd_builtin_method($def.name, $meth.hash).}
-#
 #    end for
 #  end if
 #
@@ -92,10 +92,11 @@ $methPrototype
 #        let getterProto = def.renderGetter(property)
 $getterProto = discard
 #      end if
-#      if def.definesMethod(property.setter):
-#        let setterProto = def.renderSetter(property)
+#      if property.setter.isSome():
+#        if def.definesMethod(property.setter.unsafeGet()):
+#          let setterProto = def.renderSetter(property)
 $setterProto = discard
+#        end if
 #      end if
-
 #    end for
 #  end if

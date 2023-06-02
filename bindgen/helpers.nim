@@ -682,7 +682,7 @@ proc render*(meth: MethodDefinition, def: BuiltinClassDefinition): string =
     is_const: meth.is_const,
     is_vararg: meth.is_vararg,
     is_virtual: false,
-    hash: meth.hash,
+    hash: some meth.hash,
     return_value: meth.return_type.map(proc(ty: string): ClassMethodReturn =
       result.`type` = ty
       result.meta = none string),

@@ -93,7 +93,7 @@ proc castRef*[T, U](r: sink Ref[T]; _: typedesc[U]): Ref[U] =
     raise newException(ValueError, "Cannot cast object to type " & $T & " to " & $U)
 
   # N.B. we don't make use of castedPtr for now, since it's the same as the original.
-  newRefShallow(cast[U](r.reference))
+  newRef(cast[U](r.reference))
 
 proc `[]`*[T](r: Ref[T]): lent T =
   ## Return a lent reference to the contained value.

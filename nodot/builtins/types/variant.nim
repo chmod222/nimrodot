@@ -147,7 +147,7 @@ template mapBuiltinType*(_: typedesc[PackedInt64Array]): auto = PackedInt64Array
 # If we did not hit any overload, there is a gap in our coverage and we must
 # handle that.
 template mapBuiltinType*[T](_: typedesc[T]) =
-  {.error: "generic mapBuiltinType invoked".}
+  {.error: "generic mapBuiltinType invoked: " & $type(T).}
 
 template maybeDowncast*[U](val: auto): U =
   # There's no harm to convert T to T, but it does get spammy with compiler hints

@@ -104,6 +104,7 @@ macro custom_class*(def: untyped) =
 # Unfortunately, "virtual" is already taken
 template gdvirtual*() {.pragma.}
 template abstract*() {.pragma.}
+template name*(rename: string) {.pragma.}
 
 template expectClassReceiverProc(def: typed) =
   ## Helper function to assert that a proc definition with `x: var T` as the
@@ -148,13 +149,16 @@ macro classMethod*(def: typed) =
           default: identDef[^1])
 
   var virtual = false
+  var exportName = def[0].strVal()
 
   # macros.hasCustomPragma somehow always return false here
   for pragma in def[4]:
-    if pragma.strVal() == "gdvirtual":
+    if pragma.kind == nnkSym and pragma.strVal() == "gdvirtual":
       virtual = true
+    elif pragma.kind == nnkExprColonExpr and pragma[0].strVal() == "name":
+      exportName = pragma[1].strVal()
 
-  classes[def.className].methods[def[0].strVal()] = MethodInfo(
+  classes[def.className].methods[exportName] = MethodInfo(
     symbol: def[0],
     defaultValues: defaults,
     virtual: virtual,
@@ -177,7 +181,13 @@ macro staticMethod*(T: typedesc; def: typed) =
           binding: binding,
           default: identDef[^1])
 
-  classes[$T].methods[def[0].strVal()] = MethodInfo(
+  var exportName = def[0].strVal()
+
+  for pragma in def[4]:
+    if pragma.kind == nnkExprColonExpr and pragma[0].strVal() == "name":
+      exportName = pragma[1].strVal()
+
+  classes[$T].methods[exportName] = MethodInfo(
     symbol: def[0],
     defaultValues: defaults,
     virtual: false,

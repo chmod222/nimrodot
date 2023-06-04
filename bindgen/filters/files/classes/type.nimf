@@ -10,7 +10,7 @@
 #  result = autogenDisclaimer()
 #
 import ../../builtins/types/stringname
-import internal/instance_funcs
+import ../../utils
 
 #  if def.inherits.isSome():
 #    let parentName = def.inherits.unsafeGet()
@@ -25,17 +25,12 @@ type
 type
   ${def.name}* = ptr object of RootObj
     opaque*: pointer
+    vtable*: pointer
 #  end if
 
-var instanceBindingCallbacks* = default(GDExtensionInstanceBindingCallbacks)
 var className: StringName = "$def.name"
 
-proc gdInstanceBindingCallbacks*(_: typedesc[$def.name]): ptr GDExtensionInstanceBindingCallbacks =
-  addr instanceBindingCallbacks
-
 proc gdClassName*(_: typedesc[$def.name]): ptr StringName = addr className
-
-instanceBindingCallbacks = makeInstanceFunctions($def.name)
 #  for enu in def.enums.get(@[]):
 #    if not enu.name.startsWith("Variant."):
 #      var duplicates = initOrderedTable[int, seq[EnumValue]]()

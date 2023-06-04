@@ -58,11 +58,12 @@ macro custom_class*(def: untyped) =
   def[0].expectKind(nnkPragmaExpr)
   def[0][0].expectKind(nnkIdent)
 
-  def[2].expectKind(nnkObjectTy)
+  def[2].expectKind(nnkPtrTy)
+  def[2][0].expectKind(nnkObjectTy)
 
   # Unless specified otherwise, we derive from Godot's "Object"
-  if def[2][1].kind == nnkEmpty:
-    def[2][1] = newTree(nnkOfInherit, "Object".ident())
+  if def[2][0][1].kind == nnkEmpty:
+    def[2][0][1] = newTree(nnkOfInherit, "Object".ident())
 
   var
     abstract: bool = false
@@ -79,7 +80,7 @@ macro custom_class*(def: untyped) =
 
   classes[def[0][0].strVal()] = ClassRegistration(
     typeNode: def[0][0],
-    parentNode: def[2][1][0],
+    parentNode: def[2][0][1][0],
 
     virtual: virtual,
     abstract: abstract,
@@ -94,10 +95,10 @@ macro custom_class*(def: untyped) =
 
     enums: @[])
 
-  if def[2][1][0].strVal() notin classes:
+  if def[2][0][1][0].strVal() notin classes:
     # If we are deriving from a Godot class as opposed to one of our own,
     # we add in a field to store our runtime class information into.
-    def[2][2] &= newIdentDefs("gdclassinfo".ident(), "pointer".ident())
+    def[2][0][2] &= newIdentDefs("gdclassinfo".ident(), "pointer".ident())
 
   def
 
@@ -107,17 +108,13 @@ template abstract*() {.pragma.}
 template name*(rename: string) {.pragma.}
 
 template expectClassReceiverProc(def: typed) =
-  ## Helper function to assert that a proc definition with `x: var T` as the
+  ## Helper function to assert that a proc definition with `x: T` as the
   ## first parameter has been provided.
   def.expectKind(nnkProcDef)
-  def[3][1][^2].expectKind(nnkVarTy)
-  def[3][1][^2][0].expectKind(nnkSym)
+  def[3][1][^2].expectKind(nnkSym)
 
 template className(def: typed): string =
-  if def[3][1][^2].kind == nnkVarTy:
-    def[3][1][^2][0].strVal()
-  else:
-    def[3][1][^2][1].strVal()
+  def[3][1][^2].strVal()
 
 macro ctor*(def: typed) =
   def.expectClassReceiverProc()
@@ -317,8 +314,25 @@ macro constant*(T: typedesc; def: typed) =
 
   def
 
-include internal/typeinfo
+#
+# Lower level interaction with the ClassDB interface
+#
 
+# Since we deal with a lot of compile time know stuff, this comes in
+# useful quite often. As the function is generated once per string,
+# we have our own interning of interned strings.
+proc staticStringName(s: static[string]): ptr StringName =
+  var interned {.global.}: StringName = s
+
+  addr interned
+
+proc gdClassName(_: typedesc): ptr StringName = staticStringName("")
+proc gdClassName[T: AnyObject](_: typedesc[T]): ptr StringName = staticStringName($T)
+
+include internal/typeinfo
+include internal/bindwrapper
+
+# Used in create_instance
 proc create_callback(token, instance: pointer): pointer {.cdecl.} = nil
 proc free_callback(token, instance, binding: pointer) {.cdecl.} = discard
 proc reference_callback(token, instance: pointer; reference: GDExtensionBool): GDExtensionBool {.cdecl.} = 1
@@ -328,16 +342,19 @@ var nopOpBinding = GDExtensionInstanceBindingCallbacks(
   free_callback: free_callback,
   reference_callback: reference_callback)
 
+# The RuntimeClassRegistration[T] structure lives statically, once per class, and contains
+# the function callbacks into "userland", so to so. This is where all the callbacks into the
+# users code get stored.
 type
-  ConstructorFunc[T] = proc(obj: var T)
-  DestructorFunc[T] = proc(obj: var T)
+  ConstructorFunc[T] = proc(obj: T)
+  DestructorFunc[T] = proc(obj: T)
 
-  NotificationHandlerFunc[T] = proc(obj: var T; what: int)
-  RevertQueryFunc[T] = proc(obj: var T; propertyName: StringName): Option[Variant]
-  PropertyListFunc[T] = proc(obj: var T; properties: var seq[GDExtensionPropertyInfo])
+  NotificationHandlerFunc[T] = proc(obj: T; what: int)
+  RevertQueryFunc[T] = proc(obj: T; propertyName: StringName): Option[Variant]
+  PropertyListFunc[T] = proc(obj: T; properties: var seq[GDExtensionPropertyInfo])
 
-  PropertyGetterFunc[T] = proc(obj: var T; propertyName: StringName): Option[Variant]
-  PropertySetterFunc[T] = proc(obj: var T; propertyName: StringName; value: Variant): bool
+  PropertyGetterFunc[T] = proc(obj: T; propertyName: StringName): Option[Variant]
+  PropertySetterFunc[T] = proc(obj: T; propertyName: StringName; value: Variant): bool
 
   RuntimeClassRegistration[T] = object
     lastGodotAncestor: StringName = "Object"
@@ -352,19 +369,35 @@ type
     getFunc: PropertyGetterFunc[T]
     setFunc: PropertySetterFunc[T]
 
+# Once again we fall back to this old trick.
+proc retrieveRuntimeClassInformation[T](): ptr RuntimeClassRegistration[T] =
+  var rcr {.global.}: RuntimeClassRegistration[T]
+
+  addr rcr
+
+
 proc create_instance[T, P](userdata: pointer): pointer {.cdecl.} =
-  var nimInst = cast[ptr T](gdInterfacePtr.mem_alloc(sizeof(T).csize_t))
+  type
+    TObj = pointerBase T
+
+  var nimInst = cast[T](gdInterfacePtr.mem_alloc(sizeof(TObj).csize_t))
   var rcr = cast[ptr RuntimeClassRegistration[T]](userdata)
 
   var className = ($T).StringName
   var lastNativeClassName = rcr.lastGodotAncestor
 
+  mixin gdVTablePointer
+
   # We construct the parent class and store it into our opaque pointer field, so we have
   # a handle from Godot, for Godot.
-  nimInst.opaque = gdInterfacePtr.classdb_construct_object(addr lastNativeClassName)
-  nimInst.gdclassinfo = userdata
+  let obj = gdInterfacePtr.classdb_construct_object(addr lastNativeClassName)
+  nimInst[] = TObj(
+    opaque: obj,
+    vtable: gdVTablePointer(T),
+    gdclassinfo: userdata
+  )
 
-  rcr.ctor(nimInst[])
+  rcr.ctor(nimInst)
 
   # We tell Godot what the actual type for our object is and bind our native class to
   # its native class.
@@ -374,10 +407,10 @@ proc create_instance[T, P](userdata: pointer): pointer {.cdecl.} =
   nimInst.opaque
 
 proc free_instance[T, P](userdata: pointer; instance: GDExtensionClassInstancePtr) {.cdecl.} =
-  var nimInst = cast[ptr T](instance)
+  var nimInst = cast[T](instance)
   var rcr = cast[ptr RuntimeClassRegistration[T]](userdata)
 
-  rcr.dtor(nimInst[])
+  rcr.dtor(nimInst)
 
   gdInterfacePtr.mem_free(nimInst)
 
@@ -387,44 +420,76 @@ proc instance_to_string[T](instance: GDExtensionClassInstancePtr;
   var nimInst = cast[ptr T](instance)
 
   when compiles($nimInst[]):
-    gdInterfacePtr.string_new_with_utf8_chars(str, cstring($nimInst[]))
+    gdInterfacePtr.string_new_with_utf8_chars(str, cstring($nimInst))
     valid[] = 1
   else:
     valid[] = 0
 
 proc instance_notification[T](instance: GDExtensionClassInstancePtr;
                               what: int32) {.cdecl.} =
-  var nimInst = cast[ptr T](instance)
+  var nimInst = cast[T](instance)
   let regInst = cast[ptr RuntimeClassRegistration[T]](nimInst.gdclassinfo)
 
   if regInst.notifierFunc.isNil():
     return
 
-  regInst.notifierFunc(nimInst[], int(what))
+  regInst.notifierFunc(nimInst, int(what))
 
-proc instance_virt_query[T](instance: GDExtensionClassInstancePtr;
+macro vtableEntries[T](vptr: ptr T): auto =
+  ## Give a pointer to some VTable, it generates a tuple of the following layout:
+  ## `(fieldName: (name: "_godot_name", fnPtr: ...), ...)`
+  let vtDef = vptr.getType()[1].getTypeImpl()
+
+  result = newTree(nnkTupleConstr)
+
+  for field in vtDef[2]:
+    result &= newTree(nnkExprColonExpr, field[0],
+      newTree(nnkTupleConstr,
+        newTree(nnkExprColonExpr, ident"name", newCall(ident"StringName", field[1][1][0][1])),
+        newTree(nnkExprColonExpr, ident"fnPtr", newDotExpr(vptr, field[0]))))
+
+proc instance_virt_query[T](userdata: pointer;
                             methodName: GDExtensionConstStringNamePtr): GDExtensionClassCallVirtual
                             {.cdecl.} =
-  var nimInst = cast[ptr T](instance)
   var methodName = cast[ptr StringName](methodName)
 
+  # This relies on the fact that the vtable is initialized so that all parent
+  # virtual functions are either already registered or overriden.
+  let vtfields {.global.} = vtableEntries(gdVTablePointer(T))
+
+  # These are cached per instance by Godot, so looping through naively is fine.
+  for entry, fn in vtfields.fieldPairs():
+    if fn.name == methodName[]:
+      if fn.fnPtr.isNil():
+        return nil
+      else:
+        # We return an anonymous proc with a matching signature that does
+        # about the same thing as invoke_method_ptrcall() below, only with
+        # a "baked in" callable ptr. This works because `vtfields` is statically
+        # known and `fieldPairs` is statically unrolled and `fn.fnPtr` is staticaly
+        # known as well.
+        return proc(
+          instance: GDExtensionClassInstancePtr;
+          args: ptr GDExtensionConstTypePtr;
+          returnPtr: GDExtensionTypePtr) {.cdecl.} =
+            invoke_ptrcall[T](fn.fnPtr, false, instance, args, returnPtr)
   nil
 
 proc can_property_revert[T](instance: GDExtensionClassInstancePtr;
                             name: GDExtensionConstStringNamePtr): GDExtensionBool {.cdecl.} =
-  var nimInst = cast[ptr T](instance)
+  var nimInst = cast[T](instance)
   var prop = cast[ptr StringName](name)
   let regInst = cast[ptr RuntimeClassRegistration[T]](nimInst.gdclassinfo)
 
   if regInst.revertFunc.isNil():
     return 0
 
-  GDExtensionBool(regInst.revertFunc(nimInst[], prop[]).isSome())
+  GDExtensionBool(regInst.revertFunc(nimInst, prop[]).isSome())
 
 proc property_revert[T](instance: GDExtensionClassInstancePtr;
                         name: GDExtensionConstStringNamePtr;
                         ret: GDExtensionVariantPtr): GDExtensionBool {.cdecl.} =
-  var nimInst = cast[ptr T](instance)
+  var nimInst = cast[T](instance)
   var prop = cast[ptr StringName](name)
   var retPtr = cast[ptr Variant](ret)
   let regInst = cast[ptr RuntimeClassRegistration[T]](nimInst.gdclassinfo)
@@ -432,7 +497,7 @@ proc property_revert[T](instance: GDExtensionClassInstancePtr;
   if regInst.revertFunc.isNil():
     return 0
 
-  let revertValue = regInst.revertFunc(nimInst[], prop[])
+  let revertValue = regInst.revertFunc(nimInst, prop[])
 
   if revertValue.isNone():
     return 0
@@ -440,17 +505,6 @@ proc property_revert[T](instance: GDExtensionClassInstancePtr;
   retPtr[] = revertValue.unsafeGet()
 
   return 1
-
-# Since we deal with a lot of compile time know stuff, this comes in
-# useful quite often. As the function is generated once per string,
-# we have our own interning of interned strings.
-proc staticStringName(s: static[string]): ptr StringName =
-  var interned {.global.}: StringName = s
-
-  addr interned
-
-proc gdClassName[T: AnyObject](_: typedesc[T]): ptr StringName =
-  staticStringName($T)
 
 type
   PropertyInfo*[T] = object
@@ -501,13 +555,13 @@ type
 
 proc list_class_properties[T](instance: GDExtensionClassInstancePtr;
                               count: ptr uint32): ptr GDExtensionPropertyInfo {.cdecl.} =
-  var nimInst = cast[ptr T](instance)
+  var nimInst = cast[T](instance)
   let regInst = cast[ptr RuntimeClassRegistration[T]](nimInst.gdclassinfo)
 
   var properties = newSeq[GDExtensionPropertyInfo]()
 
   if not regInst.propertyListFunc.isNil():
-    regInst.propertyListFunc(nimInst[], properties)
+    regInst.propertyListFunc(nimInst, properties)
 
   count[] = uint32 len(properties)
 
@@ -544,7 +598,7 @@ proc free_class_properties[T](instance: GDExtensionClassInstancePtr;
 proc property_set[T](instance: GDExtensionClassInstancePtr;
                      name: GDExtensionConstStringNamePtr;
                      value: GDExtensionConstVariantPtr): GDExtensionBool {.cdecl.} =
-  var nimInst = cast[ptr T](instance)
+  var nimInst = cast[T](instance)
   let regInst = cast[ptr RuntimeClassRegistration[T]](nimInst.gdclassinfo)
   var prop = cast[ptr StringName](name)
   var value = cast[ptr Variant](value)
@@ -552,12 +606,12 @@ proc property_set[T](instance: GDExtensionClassInstancePtr;
   result = 0
 
   if not regInst.setFunc.isNil():
-    result = GDExtensionBool(regInst.setFunc(nimInst[], prop[], value[]))
+    result = GDExtensionBool(regInst.setFunc(nimInst, prop[], value[]))
 
 proc property_get[T](instance: GDExtensionClassInstancePtr;
                      name: GDExtensionConstStringNamePtr;
                      value: GDExtensionVariantPtr): GDExtensionBool {.cdecl.} =
-  var nimInst = cast[ptr T](instance)
+  var nimInst = cast[T](instance)
   let regInst = cast[ptr RuntimeClassRegistration[T]](nimInst.gdclassinfo)
 
   var prop = cast[ptr StringName](name)
@@ -568,12 +622,11 @@ proc property_get[T](instance: GDExtensionClassInstancePtr;
   result = 0
 
   if not regInst.getFunc.isNil():
-    value = regInst.getFunc(nimInst[], prop[])
+    value = regInst.getFunc(nimInst, prop[])
     result = GDExtensionBool(value.isSome())
 
     if value.isSome():
       retValue[] = value.unsafeGet()
-
 
 proc registerClass*[T, P](
     lastNative: StringName,
@@ -592,8 +645,9 @@ proc registerClass*[T, P](
   when T isnot AnyObject:
     {.warning: "T really should derive (directly or indrectly) from `Object`.".}
 
-  # Needs static lifetime, so {.global.}
-  var rcr {.global.}: RuntimeClassRegistration[T] = RuntimeClassRegistration[T](
+  var rcrPtr = retrieveRuntimeClassInformation[T]()
+
+  rcrPtr[] = RuntimeClassRegistration[T](
     ctor: ctorFunc,
     dtor: dtorFunc,
     notifierFunc: notification,
@@ -627,195 +681,13 @@ proc registerClass*[T, P](
     get_virtual_func: instance_virt_query[T],
     get_rid_func: nil,
 
-    class_userdata: addr rcr)
+    class_userdata: rcrPtr)
 
   gdInterfacePtr.classdb_register_extension_class(
     gdTokenPtr,
     addr className,
     addr parentClassName,
     addr creationInfo)
-
-type
-  ReturnValueInfo = tuple
-    returnValue: GDExtensionPropertyInfo
-    returnMeta: GDExtensionClassMethodArgumentMetadata
-
-proc gdClassName(_: typedesc): ptr StringName = staticStringName("")
-
-
-macro getReturnInfo(M: typed): Option[ReturnValueInfo] =
-  let typeInfo = M.getType()[1]
-
-  if typeInfo[1].strVal() == "void":
-    return genAst: none ReturnValueInfo
-
-  return genAst(R = typeInfo[1]):
-    some (
-      returnValue: GDExtensionPropertyInfo(
-        `type`: variantTypeId(typeOf R),
-        name: staticStringName(""),
-        class_name: gdClassName(typeOf R),
-        hint: uint32(propertyHint(typeOf R)),
-        hint_string: staticStringName(""),
-        usage: uint32(propertyUsage(typeOf R))
-      ),
-      returnMeta: typeMetaData(typeOf R))
-
-macro getMethodFlags(M: typed): static[set[GDExtensionClassMethodFlags]] =
-  let typedM = M.getType()[1].getTypeImpl()
-
-  var setLiteral = newTree(nnkCurly,
-    "GDEXTENSION_METHOD_FLAGS_DEFAULT".ident())
-
-  if len(typedM[0]) > 1:
-    let firstParam = typedM[0][1]
-    let lastParam = typedM[0][^1]
-
-    if firstParam[1].kind != nnkVarTy:
-      setLiteral &= "GDEXTENSION_METHOD_FLAG_STATIC".ident()
-
-    if lastParam[1].kind == nnkBracketExpr and
-        lastParam[1][0].strVal() == "varargs":
-      setLiteral &= "GDEXTENSION_METHOD_FLAG_VARARG".ident()
-
-  genAst(setLiteral):
-    setLiteral
-
-func isVarArg(m: NimNode): bool =
-  result = m.kind == nnkBracketExpr and m[0].strVal() == "varargs"
-
-macro getProcProps(M: typed): auto =
-  let typedM = M.getType()[1].getTypeImpl()
-
-  var argc = 0
-
-  var args = newTree(nnkBracket)
-  var argsMeta = newTree(nnkBracket)
-
-  if len(typedM[0]) > 2:
-    for defs in typedM[0][2..^1]:
-      if defs[^2].isVarArg():
-        break
-
-      for binding in defs[0..^3]:
-        inc argc
-
-        let argMeta = genAst(P = defs[^2]):
-          typeMetaData(typeOf P)
-
-        let arg = genAst(n = binding.strVal(), P = defs[^2]):
-          GDExtensionPropertyInfo(
-           `type`: variantTypeId(typeOf P),
-            name: staticStringName(n),
-            class_name: gdClassName(typeOf P),
-            hint: uint32(propertyHint(typeOf P)),
-            hint_string: staticStringName(""),
-            usage: uint32(propertyUsage(typeOf P))
-          )
-
-        argsMeta &= argMeta
-        args &= arg
-
-  result = genAst(procArgc = argc, procArgs = args, procArgsMeta = argsMeta):
-    tuple[pargc: int,
-          pargs: array[procArgc, GDExtensionPropertyInfo],
-          pmeta: array[procArgc, GDExtensionClassMethodArgumentMetadata]](
-      pargc: procArgc,
-      pargs: procArgs,
-      pmeta: procArgsMeta)
-
-type
-  CallMarshallingError = object of CatchableError
-    argument: int32
-    expected: int32
-
-proc raiseArgError(argpos: int32, expectedType: GDExtensionVariantType) =
-  var err = newException(CallMarshallingError, "")
-
-  err.argument = argpos
-  err.expected = expectedType.int32
-
-  raise err
-
-proc tryCastTo*[T](arg: Variant; _: typedesc[T]; argPos: var int32): T =
-  try:
-    result = arg.castTo(T)
-  except VariantCastException:
-    raiseArgError(argPos, T.variantTypeId)
-
-  inc argPos
-
-# Call a function with a number of Variant pointers (bindcall)
-macro callBindFunc(
-    def: typed;
-    self: typed;
-    argsArray: ptr UncheckedArray[ptr Variant];
-    argc: typed;
-    argPos: int32): auto =
-  let typedFunc = def.getTypeInst()[0]
-
-  var argsStart = 1
-
-  result = newTree(nnkCall, def)
-
-  if len(typedFunc) > 1:
-    if typedFunc[1][^2].kind == nnkVarTy:
-      result &= newTree(nnkBracketExpr, self)
-
-      inc argsStart
-
-    for i, arg in enumerate(typedFunc[argsStart..^1]):
-      if arg[^2].isVarArg():
-        # If we hit a varargs[T] parameter, generate a preamble statement to fill a seq[]
-        # and wrap our original result into a block statement.
-        let varArgsId = genSym(nskVar, "vargs")
-
-        result.add varArgsId
-
-        return genAst(T = arg[^2][1], start = i, argsArray, argc, varArgsId, doCall = result) do:
-          block:
-            var varArgsId = newSeqOfCap[typeOf T](argc - start)
-
-            for i in start .. argc - 1:
-                varArgsId &= maybeDowncast[T](argsArray[i][].tryCastTo(mapBuiltinType(typeOf T), argPos))
-                inc argPos
-
-            doCall
-
-      result.add genAst(T = arg[^2], argsArray, i) do:
-        maybeDowncast[T](argsArray[i][].tryCastTo(mapBuiltinType(typeOf T), argPos))
-
-# Call a function with a number of builtin pointers (ptrcall)
-#
-# This is highly unsafe of course, but at this point we have to trust Godot not
-# to send us bad data. If it does, we do the same thing it does when we do that:
-# crash.
-macro callPtrFunc(
-    def: typed;
-    self: typed;
-    argsArray: ptr UncheckedArray[GDExtensionConstTypePtr]): auto =
-  let typedFunc = def.getTypeInst()[0]
-
-  var argsStart = 1
-
-  result = newTree(nnkCall, def)
-
-  if len(typedFunc) > 1:
-    if typedFunc[1][^2].kind == nnkVarTy:
-      result &= newTree(nnkBracketExpr, self)
-
-      inc argsStart
-
-    for i, arg in enumerate(typedFunc[argsStart..^1]):
-      let argBody = if arg[^2].isVarArg():
-        # Cannot be done using ptrcall, so we leave it empty in case
-        # a vararg function is ever called using ptrcall.
-        break
-      else:
-        genAst(T = arg[^2], argsArray, i):
-          maybeDowncast[T](argFromPointer[mapBuiltinType(typeOf T)](argsArray[i]))
-
-      result &= argBody
 
 proc invoke_method*[T, M](userdata: pointer;
                           instance: GDExtensionClassInstancePtr;
@@ -824,47 +696,16 @@ proc invoke_method*[T, M](userdata: pointer;
                           ret: GDExtensionVariantPtr;
                           error: ptr GDExtensionCallError) {.cdecl.} =
 
-  let nimInst = cast[ptr T](instance)
-  let callable = cast[M](userdata)
+  invoke_bindcall[T](cast[M](userdata), false, instance, args, argc, ret, error)
 
-  let argArray = cast[ptr UncheckedArray[ptr Variant]](args)
-  var argPos = 0'i32
-  let returnValue = cast[ptr Variant](ret)
+proc invoke_static_method*[T, M](userdata: pointer;
+                                 instance: GDExtensionClassInstancePtr;
+                                 args: ptr GDExtensionConstVariantPtr;
+                                 argc: GDExtensionInt;
+                                 ret: GDExtensionVariantPtr;
+                                 error: ptr GDExtensionCallError) {.cdecl.} =
 
-  type
-    R = callable.procReturn()
-
-  const arity = callable.procArity()
-
-  if argc < arity.argCount:
-    error[].error = GDEXTENSION_CALL_ERROR_TOO_FEW_ARGUMENTS
-    error[].argument = int32(arity.argCount)
-    error[].expected = int32(arity.argCount)
-
-    return
-  elif argc > arity.argCount and not arity.variadic:
-    error[].error = GDEXTENSION_CALL_ERROR_TOO_MANY_ARGUMENTS
-    error[].argument = int32(arity.argCount)
-    error[].expected = int32(arity.argCount)
-
-    return
-
-  error[].error = GDEXTENSION_CALL_OK
-
-  try:
-    when R is void:
-      callable.callBindFunc(nimInst, argArray, argc, argPos)
-    else:
-      returnValue[] = %maybeDowncast[mapBuiltinType R](callable.callBindFunc(nimInst, argArray, argc, argPos))
-
-  except CallMarshallingError as cme:
-    error[].error = GDEXTENSION_CALL_ERROR_INVALID_ARGUMENT
-    error[].argument = cme.argument
-    error[].expected = cme.expected
-
-  except CatchableError:
-    # For the lack of a better option
-    error[].error = GDEXTENSION_CALL_ERROR_INVALID_METHOD
+  invoke_bindcall[T](cast[M](userdata), true, instance, args, argc, ret, error)
 
 proc invoke_method_ptrcall*[T, M](
     userdata: pointer;
@@ -872,16 +713,15 @@ proc invoke_method_ptrcall*[T, M](
     args: ptr GDExtensionConstTypePtr;
     returnPtr: GDExtensionTypePtr) {.cdecl.} =
 
-  let nimInst = cast[ptr T](instance)
-  let callable = cast[M](userdata)
-  let argArray = cast[ptr UncheckedArray[GDExtensionConstTypePtr]](args)
+  invoke_ptrcall[T](cast[M](userdata), false, instance, args, returnPtr)
 
-  type R = callable.procReturn()
+proc invoke_static_method_ptrcall*[T, M](
+    userdata: pointer;
+    instance: GDExtensionClassInstancePtr;
+    args: ptr GDExtensionConstTypePtr;
+    returnPtr: GDExtensionTypePtr) {.cdecl.} =
 
-  when R is void:
-    callable.callPtrFunc(nimInst, argArray)
-  else:
-    cast[ptr mapBuiltinType(typeOf R)](returnPtr)[] = callable.callPtrFunc(nimInst, argArray)
+  invoke_ptrcall[T](cast[M](userdata), true, instance, args, returnPtr)
 
 # Murmur3-32 is used to calculate the method hashes, we may need to replicate those.
 func murmur3(input: uint32; seed: uint32 = 0x7F07C65): uint32 =
@@ -941,7 +781,7 @@ proc calculateHash(
   result = fmix32(result)
 
 proc registerMethod*[T](
-    name: string;
+    name: static[string];
     callable: auto;
     defaults: auto;
     virtual: bool = false) =
@@ -950,34 +790,24 @@ proc registerMethod*[T](
 
   type M = typeOf callable
 
-  # TODO: The {.classMethod.} macros ensures every proc here has a typedesc[T] or var T
-  #       parameter at the first position. This function does not, but it can still be
-  #       called manually if need be, so we must verify here as well.
-
-  var returnInfo = M.getReturnInfo()
-  var rvInfo: ptr GDExtensionPropertyInfo = nil
-  var rvMeta = GDEXTENSION_METHOD_ARGUMENT_METADATA_NONE
-  var defaultFlags = uint32 GDEXTENSION_METHOD_FLAGS_DEFAULT
-
-  if virtual:
-    defaultFlags = defaultFlags or (uint32 GDEXTENSION_METHOD_FLAG_VIRTUAL)
-
+  # Collect parameter and return value properties
   {.hint[ConvFromXtoItselfNotNeeded]: off.}
   {.warning[HoleEnumConv]: off.}
 
-  for flag in M.getMethodFlags():
+  let procProperties = M.getProcProps(T)
+
+  # Pack flags set[] into uint32 and add virtual
+  var defaultFlags: uint32 = 0
+
+  for flag in procProperties.pflags:
     defaultFlags = defaultFlags or (uint32 flag)
 
   {.warning[HoleEnumConv]: on.}
-
-  if returnInfo.isSome():
-    rvInfo = addr returnInfo.unsafeGet().returnValue
-    rvMeta = returnInfo.unsafeGet().returnMeta
-
-  let argProperties = M.getProcProps()
-
   {.hint[ConvFromXtoItselfNotNeeded]: on.}
 
+  if virtual: defaultFlags = defaultFlags or (uint32 GDEXTENSION_METHOD_FLAG_VIRTUAL)
+
+  # Collect default values
   var defaultVariants = newSeq[Variant]()
 
   # fieldPairs() doesn't play well with collect(), so we can't be fancy here
@@ -988,29 +818,47 @@ proc registerMethod*[T](
     for i in 0..high(defaultVariants):
       cast[ptr GDExtensionVariantPtr](addr defaultVariants[i])
 
-  # Highly useful for debugging despite not 100% match Godot's yet
+  # Unpack return value to get a pointer
+  var returnInfo = procProperties.retval
+  var rvInfo: ptr GDExtensionPropertyInfo = nil
+  var rvMeta = GDEXTENSION_METHOD_ARGUMENT_METADATA_NONE
+
+  if returnInfo.isSome():
+    rvInfo = addr returnInfo.unsafeGet()[0]
+    rvMeta = returnInfo.unsafeGet()[1]
+
+
+  # Highly useful for debugging despite not 100% matching Godot's yet
   #
   #var hash = calculateHash(
   #  returnInfo.map(proc(s: ReturnValueInfo): GDExtensionPropertyInfo = s.returnValue),
-  #  argProperties.pargs,
+  #  procProperties.pargs,
   #  defaultVariants,
   #  defaultFlags)
+
+  const (bindcall, ptrcall) = when M.isStatic(T):
+    (invoke_static_method[T, M],
+     invoke_static_method_ptrcall[T, M])
+  else:
+    (invoke_method[T, M],
+     invoke_method_ptrcall[T, M])
 
   var methodInfo = GDExtensionClassMethodInfo(
     name: addr methodName,
     method_userdata: callable,
 
-    call_func: invoke_method[T, M],
-    ptrcall_func: invoke_method_ptrcall[T, M],
+    call_func: bindcall,
+    ptrcall_func: ptrcall,
+
     method_flags: defaultFlags,
 
     has_return_value: GDExtensionBool(returnInfo.isSome()),
     return_value_info: rvInfo,
     return_value_metadata: rvMeta,
 
-    argument_count: uint32(argProperties.pargc),
-    arguments_info: cast[ptr GDExtensionPropertyInfo](addr argProperties.pargs),
-    arguments_metadata: cast[ptr GDExtensionClassMethodArgumentMetadata](addr argProperties.pmeta),
+    argument_count: uint32(procProperties.pargc),
+    arguments_info: cast[ptr GDExtensionPropertyInfo](addr procProperties.pargs),
+    arguments_metadata: cast[ptr GDExtensionClassMethodArgumentMetadata](addr procProperties.pmeta),
 
     default_argument_count: uint32(len(defaultVariantPtrs)),
     default_arguments: if len(defaultVariantPtrs) > 0:

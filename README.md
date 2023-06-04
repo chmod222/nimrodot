@@ -31,6 +31,7 @@ Note that this is not yet usable for actual development.
       - [x] Query property List
     - Methods
       - [ ] Virtual
+        - Fundamentals implemented, missing usability
       - [x] Static
       - [x] Instance
       - [x] Bindcall

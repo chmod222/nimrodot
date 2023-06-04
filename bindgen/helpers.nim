@@ -239,7 +239,7 @@ func safeIdent*(id: string): string =
     return "p_result"
 
   let canonicalId = if id.startsWith('_'):
-    id[1..^1]
+    "v" & id
   else:
     id
 
@@ -532,8 +532,7 @@ proc renderImportList*(
 
     if dependant.is_instantiable or # constructor needs gdffi
         dependant.is_singleton or # singleton query too
-        (dependant.methods.isSome() and # methods too, unless all are virtual
-          not dependant.methods.unsafeGet().all(proc(m: auto): auto = m.is_virtual)):
+        dependant.methods.isSome():
       outHints.incl dhGdffi
 
 
@@ -625,7 +624,11 @@ proc render*(ctor: ConstructorDefinition, def: BuiltinClassDefinition): string =
 
   result = "proc " & def.name.deriveCtorName() & "*" & args.renderArgs() & ": " & selfType.render()
 
-proc render*(meth: ClassMethodDefinition, def: ClassDefinition | BuiltinClassDefinition; qualifyEnums: bool = true): string =
+proc render*(
+    meth: ClassMethodDefinition;
+    def: ClassDefinition | BuiltinClassDefinition;
+    qualifyEnums: bool = true;
+    anonymous: bool = false): string =
   # TODO:
   #   - Default values
   #
@@ -664,8 +667,8 @@ proc render*(meth: ClassMethodDefinition, def: ClassDefinition | BuiltinClassDef
   if meth.is_vararg:
     args &= (bindings: @["args"], `type`: def.makeVarArgsParam())
 
-  if meth.is_virtual:
-    result = "method " & meth.name.safeIdent() & "*" & args.renderArgs()
+  if anonymous:
+    result = "proc" & args.renderArgs()
   else:
     result = "proc " & meth.name.safeIdent() & "*" & args.renderArgs()
 
@@ -744,6 +747,38 @@ proc render*(op: OperatorDefinition; left: string): string =
     arguments: some args)
 
   return dummyFunc.render()
+
+proc needsVtable*(def: ClassDefinition): bool =
+  for meth in def.methods.get(@[]):
+    if meth.is_virtual:
+      result = true
+
+      break
+
+proc vtableEntryName*(meth: ClassMethodDefinition): string =
+  meth.name.safeIdent()
+
+proc parentVTable*(def: ClassDefinition): string =
+  result = "RootObj"
+
+  var parent = def.inherits
+
+  while parent.isSome() and not apiDef.classTypes[parent.unsafeGet()].needsVTable:
+    parent = apiDef.classTypes[parent.unsafeGet()].inherits
+
+  if parent.isSome():
+    result = parent.unsafeGet() & "VTable"
+
+proc renderVtable*(def: ClassDefinition): string =
+  result = "type\n  " & def.name & "VTable* = object of " & def.parentVTable() & "\n"
+
+  for meth in def.methods.unsafeGet():
+    if not meth.is_virtual:
+      continue
+
+    let virtualProto = meth.render(def, anonymous = true)
+
+    result &= "    " & meth.vtableEntryName() & "*: " & virtualProto & " {.gd_name: \"" & meth.name & "\".}\n"
 
 func splitTitleCase(tcs: string): seq[string] =
   result = @[$tcs[0]]

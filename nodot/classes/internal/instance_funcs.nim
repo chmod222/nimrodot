@@ -1,8 +1,8 @@
 import std/typetraits
 
-import ../../../utils
-import ../../../ffi
-import ../../../interface_ptrs
+import ../../utils
+import ../../ffi
+import ../../interface_ptrs
 
 export ffi
 export utils
@@ -14,7 +14,7 @@ proc makeInstanceFunctions*[T](_: typedesc[T]): GDExtensionInstanceBindingCallba
   proc create_callback(token, instance: pointer): pointer {.cdecl.} =
     result = gdInterfacePtr.mem_alloc(csize_t sizeOf(`TObj`))
 
-    cast[T](result)[] = `TObj`(opaque: instance)
+    cast[T](result)[] = `TObj`(opaque: instance, vtable: T.gdVTablePointer())
 
   proc free_callback(token, instance, binding: pointer) {.cdecl.} =
     gdInterfacePtr.mem_free(binding)

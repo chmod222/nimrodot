@@ -51,16 +51,22 @@ func reduceType(s: ParamInfo | ReturnInfo): NimNode =
   else:
     s.fullType
 
-func reducePtr(s: ParamInfo): NimNode =
+func reducefield(s: ParamInfo; field: string): NimNode =
   if s.isStatic:
     # Static methods take a nil pointer
     newNilLit()
   elif s.isRefCountWrapper:
     # Ref[T] wrappers reduce to self[].opaque
-    newDotExpr(newTree(nnkBracketExpr, s.binding), "opaque".ident())
+    newDotExpr(newTree(nnkBracketExpr, s.binding), field.ident())
   else:
     # Everything else reduces to self.opaque
-    newDotExpr(s.binding, "opaque".ident())
+    newDotExpr(s.binding, field.ident())
+
+func reduceVtPtr(s: ParamInfo): NimNode =
+  s.reduceField("vtable")
+
+func reducePtr(s: ParamInfo): NimNode =
+  s.reduceField("opaque")
 
 func reducePtr(r: ReturnInfo): NimNode =
   if r.isVoid:
@@ -491,6 +497,35 @@ macro gd_class_method_obj*(hash: static[int64]; prototype: untyped) =
       retType.gdInstanceBindingCallbacks))
 
     constructResultObject(fullRetType, instancePtr)
+
+template gd_name*(n: string) {.pragma.}
+
+macro gd_class_method_virtual*(
+    name: static[string];
+    vtableField: typed;
+    prototype: untyped) =
+
+  let vtableType = vtableField[0]
+  let selfPtr = prototype.resolveSelf().reduceVtPtr()
+
+  # Generate a new call passing all arguments passed to this function into the
+  # function pointer from the vtable
+  let fnPtr = genSym(ident="fnPtr")
+  var delegatedCall = newCall(fnPtr)
+
+  for bindings in prototype[3][1..^1]:
+    for def in bindings[0..^3]:
+      delegatedCall &= def
+
+  result = prototype
+  result[^1] = genAst(fnPtr, selfPtr, vtableType, vtableField = vtableField[1], delegatedCall) do:
+    let vtablePtr = cast[ptr vtableType](selfPtr)
+    let fnPtr = vtablePtr.vtableField
+
+    if fnPtr.isNil():
+      return
+
+    delegatedCall
 
 macro gd_builtin_get*(ty: typed; prototype: untyped) =
   let propertyName = prototype.getNameFromProto()

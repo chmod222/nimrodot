@@ -95,6 +95,7 @@ func variantTypeId*[T: AnyObject](_: typedesc[T]): GDExtensionVariantType =
 # may downcast.
 
 import ../types
+import ../../ref_helper
 
 # Any numeric gets widened into the largest we could receive and then
 # casted back down, as we hope that Godot did respect our metadata.
@@ -103,6 +104,7 @@ template mapBuiltinType*(_: typedesc[SomeFloat]): auto = float64
 
 # Objects are all the same on the binary level (as far as GDExt is concerned)
 template mapBuiltinType*[T: AnyObject](_: typedesc[T]): auto = T
+template mapBuiltinType*[T: AnyObject](_: typedesc[Ref[T]]): auto = T
 
 # The builtins just map back to themselves
 template mapBuiltinType*(_: typedesc[bool]): auto = bool
@@ -146,12 +148,16 @@ template mapBuiltinType*(_: typedesc[PackedInt64Array]): auto = PackedInt64Array
 
 # If we did not hit any overload, there is a gap in our coverage and we must
 # handle that.
-template mapBuiltinType*[T](_: typedesc[T]) =
-  {.error: "generic mapBuiltinType invoked: " & $type(T).}
+#template mapBuiltinType*[T](_: typedesc[T]) =
+  #{.error: "generic mapBuiltinType invoked: " & $type(T).}
 
 template maybeDowncast*[U](val: auto): U =
   # There's no harm to convert T to T, but it does get spammy with compiler hints
   when typeOf(val) is U:
     val
+  elif U is Ref:
+    # If our target type is a Ref, that means we got here via the overload
+    # `[T: AnyObject](_: typedesc[Ref[T]])` and have to reverse it
+    newRefShallow(val)
   else:
     U(val)

@@ -32,6 +32,38 @@ type Thread = thread.Thread
 #    {roProperties, roMethods, roStructFields, roConstructors, roIndexes, roOperators},
 #     "nodot/classes", def.inherits)
 #
+import internal/instance_funcs
+
+#  if def.needsVTable:
+#    let vtable = def.renderVTable()
+$vtable
+#
+#  # All pointers start out as "nil", as no virtual method has any defined
+#  # behaviour from Godot unless we override it.
+let vtable: ${def.name}VTable = default(${def.name}VTable)
+#  end if
+
+#  if def.needsVTable:
+proc gdVTablePointer*(_: typedesc[$def.name]): ptr ${def.name}VTable =
+#  else:
+proc gdVTablePointer*(_: typedesc[$def.name]): ptr $def.parentVTable =
+#  end if
+#  if def.needsVTable:
+  unsafeAddr vtable
+#  elif def.inherits.isSome():
+#    let parent = def.inherits.unsafeGet()
+  ${parent}.gdVTablePointer()
+#  else:
+  nil
+#  end if
+
+let instanceBindingCallbacks* = makeInstanceFunctions($def.name)
+
+proc gdInstanceBindingCallbacks*(_: typedesc[$def.name]): ptr GDExtensionInstanceBindingCallbacks =
+  unsafeAddr instanceBindingCallbacks
+
+# #instanceBindingCallbacks = makeInstanceFunctions($def.name)
+
 #  if def.constants.isSome:
 #    result &= "# Constants\n"
 #
@@ -68,7 +100,9 @@ proc $ctorName*(): $selfType
 #      let methPrototype = meth.render(def)
 #
 #      if meth.is_virtual:
-$methPrototype {.base.} = discard
+#        let vtableEntry = meth.vtableEntryName()
+$methPrototype
+  {.gd_class_method_virtual("$meth.name", ${def.name}VTable.$vtableEntry).}
 #      else:
 $methPrototype
 #        let hash = meth.hash.unsafeGet()

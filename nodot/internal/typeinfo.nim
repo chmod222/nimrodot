@@ -2,37 +2,6 @@
 # classdb module, so we yank it in.
 
 # Generic helpers
-macro procArgsUnnamed(p: typed; skipVar: static[bool] = true): typedesc =
-  ## Given a proc type, generate an unnamed tuple where each element
-  ## corresponds to an argument.
-  let procType = p.getTypeImpl()
-
-  procType.expectKind(nnkProcTy)
-
-  result = nnkTupleConstr.newTree()
-
-  for arg in procType[0][1..^1]:
-    if arg[1].kind == nnkVarTy and skipVar: continue
-
-    result &= arg[1]
-
-macro procArgs(p: typed; skipVar: static[bool] = true): typedesc =
-  ## Given a proc type, generate a tuple where each element
-  ## corresponds to an argument with that name.
-  let procType = p.getTypeImpl()
-
-  procType.expectKind(nnkProcTy)
-
-  result = nnkTupleTy.newTree()
-
-  for arg in procType[0][1..^1]:
-    if arg[1].kind == nnkVarTy and skipVar: continue
-
-    result &= newIdentDefs(
-      newTree(nnkAccQuoted, arg[0]),
-      arg[1],
-      newEmptyNode())
-
 macro procReturn(p: typed): typedesc =
   ## Given a proc type, return its return type (or typedesc[void])
   let procType = p.getTypeImpl()
@@ -44,7 +13,7 @@ macro procReturn(p: typed): typedesc =
   else:
     genAst(R = procType[0][0]): R
 
-macro procArity(p: typed; skipVar: static[bool] = true): auto =
+macro procArity(p: typed; isStatic: static[bool]): auto =
   ## Given a proc type, return its arity
   let procType = p.getTypeImpl()
 
@@ -54,7 +23,6 @@ macro procArity(p: typed; skipVar: static[bool] = true): auto =
   var variadic = false
 
   for arg in procType[0][1..^1]:
-    if arg[1].kind == nnkVarTy and skipVar: continue
     if arg[1].kind == nnkBracketExpr and arg[1][0].strVal() == "varargs":
       variadic = true
 
@@ -62,17 +30,11 @@ macro procArity(p: typed; skipVar: static[bool] = true): auto =
 
     inc minArgc
 
+  if not isStatic:
+    dec minArgc
+
   genAst(minArgc, isVar = variadic):
     (argCount: minArgc, variadic: isvar)
-
-macro apply(fn, args: typed): auto =
-  ## Given a callable and a (named or unnamed) tuple of its arguments,
-  ## invoke the callable with the given arguments.
-  result = newTree(nnkCall, fn)
-
-  for arg in args:
-    result.add(if arg.kind == nnkExprColonExpr: arg[1] else: arg)
-
 
 # Property Helpers
 func propertyHint(_: typedesc): auto = phiNone
@@ -98,8 +60,92 @@ func typeMetaData(_: typedesc[int | uint]): auto =
   else:
     GDEXTENSION_METHOD_ARGUMENT_METADATA_INT_IS_INT64
 
-# TODO: We need some more complex type converters. For most of these we can
-#       simply blit over whatever Godot gives us, but for things like Ref[T]
-#       we need to may need to use ref_get_object and ref_set_object.
-func argFromPointer[T](p: GDExtensionConstTypePtr): T =
-  copyMem(addr result, p, sizeOf(T))
+# isVarArg and getProcProps are used registerMethod in order to collect all
+# the information Godot wants out of the to be registered funtion pointer.
+func isVarArg(m: NimNode): bool =
+  result = m.kind == nnkBracketExpr and m[0].strVal() == "varargs"
+
+func isSelf(ft: NimNode; T: NimNode): bool =
+  T.getTypeInst()[1] == ft
+
+macro isStatic(M: typed; T: typedesc): bool =
+  let procDef = M.getType()[1].getTypeImpl()[0]
+
+  var isStatic = true
+
+  if len(procDef) > 1:
+    isStatic = not procDef[1][^2].isSelf(T)
+
+  genAst(isStatic):
+    isStatic
+
+macro getProcProps(M: typed; T: typedesc): auto =
+  let procDef = M.getType()[1].getTypeImpl()[0]
+
+  var argc = 0
+
+  var args = newTree(nnkBracket)
+  var argsMeta = newTree(nnkBracket)
+  var isStatic = true
+  var isVararg = false
+  var procFlags = newTree(nnkCurly, ident"GDEXTENSION_METHOD_FLAGS_DEFAULT")
+
+  let rval = if procDef[0].kind == nnkEmpty:
+    genAst() do:
+      none (GDExtensionPropertyInfo, GDExtensionClassMethodArgumentMetadata)
+  else:
+    genAst(R = procDef[0]) do:
+      some (
+        GDExtensionPropertyInfo(
+          `type`: variantTypeId(typeOf R),
+          name: staticStringName(""),
+          class_name: gdClassName(typeOf R),
+          hint: uint32(propertyHint(typeOf R)),
+          hint_string: staticStringName(""),
+          usage: uint32(propertyUsage(typeOf R))),
+        typeMetaData(typeOf R))
+
+  if len(procDef) > 1:
+    let offset = if procDef[1][^2].isSelf(T): 2 else: 1
+
+    isStatic = offset == 1
+
+    for defs in procDef[offset..^1]:
+      for binding in defs[0..^3]:
+        if defs[^2].isVarArg:
+          isVararg = true
+
+          break
+
+        inc argc
+
+        let argMeta = genAst(P = defs[^2]):
+          typeMetaData(typeOf P)
+
+        let arg = genAst(n = binding.strVal(), P = defs[^2]):
+          GDExtensionPropertyInfo(
+           `type`: variantTypeId(typeOf P),
+            name: staticStringName(n),
+            class_name: gdClassName(typeOf P),
+            hint: uint32(propertyHint(typeOf P)),
+            hint_string: staticStringName(""),
+            usage: uint32(propertyUsage(typeOf P))
+          )
+
+        argsMeta &= argMeta
+        args &= arg
+
+  if isStatic: procFlags &= ident"GDEXTENSION_METHOD_FLAG_STATIC"
+  if isVararg: procFlags &= ident"GDEXTENSION_METHOD_FLAG_VARARG"
+
+  result = genAst(procArgc = argc, isStatic, procArgs = args, procArgsMeta = argsMeta, procFlags, rval):
+    tuple[pargc: int,
+          pargs: array[procArgc, GDExtensionPropertyInfo],
+          pmeta: array[procArgc, GDExtensionClassMethodArgumentMetadata],
+          retval: Option[(GDExtensionPropertyInfo, GDExtensionClassMethodArgumentMetadata)],
+          pflags: system.set[GDExtensionClassMethodFlags]](
+      pargc: procArgc,
+      pargs: procArgs,
+      pmeta: procArgsMeta,
+      retval:  rval,
+      pflags: procFlags)

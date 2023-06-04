@@ -942,7 +942,7 @@ macro register*() =
     while lastAncestor in classes:
       lastAncestor = classes[lastAncestor].parentNode.strVal()
 
-    let classReg = genAst(
+    result.add genAst(
         lastAncestor,
         T = regInfo.typeNode,
         P = regInfo.parentNode,
@@ -954,7 +954,7 @@ macro register*() =
         getProp = regInfo.getPropertyIdent,
         setProp = regInfo.setPropertyIdent,
         isAbstract = regInfo.abstract,
-        isVirtual = regInfo.virtual):
+        isVirtual = regInfo.virtual) do:
 
       registerClass[T, P](
         lastAncestor,
@@ -968,46 +968,36 @@ macro register*() =
         isAbstract,
         isVirtual)
 
-    result.add(classReg)
-
     for methodName, methodInfo in regInfo.methods:
-      let methodReg = genAst(
+      result.add genAst(
           T = regInfo.typeNode,
           methodName,
           methodSymbol = methodInfo.symbol,
           defaultArgs = methodInfo.generateDefaultsTuple,
-          isVirtual = methodInfo.virtual):
+          isVirtual = methodInfo.virtual) do:
 
         registerMethod[T](methodName, methodSymbol, defaultArgs, isVirtual)
 
-      result.add(methodReg)
-
     for enumDef in regInfo.enums:
-      let enumReg = genAst(
+      result.add genAst(
           T = regInfo.typeNode,
           E = enumDef.definition[0][0],
-          isBitfield = enumDef.isBitfield):
+          isBitfield = enumDef.isBitfield) do:
 
         registerClassEnum[T, E](E, isBitfield)
 
-      result.add(enumReg)
-
     for constDef in regInfo.consts:
-      let constReg = genAst(
+      result.add genAst(
           T = regInfo.typeNode,
           name = constDef.name.strVal(),
-          value = constDef.value):
+          value = constDef.value) do:
 
         registerClassConstant[T](name, value)
 
-      result.add(constReg)
-
     for signalName, signalDef in regInfo.signals:
-      let signalReg = genAst(
+      result.add genAst(
           T = regInfo.typeNode,
           name = signalName,
-          value = signalDef):
+          value = signalDef) do:
 
         registerSignal[T](name, value)
-
-      result.add(signalReg)

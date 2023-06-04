@@ -137,13 +137,13 @@ proc invoke_ptrcall[T](
     else:
       cast[ptr mapBuiltinType(typeOf R)](returnPtr)[] = callable.callPtrFunc(nimInst, argArray)
 
-proc invoke_bindcall*[T](callable: auto;
-                         isStatic: static[bool];
-                         instance: GDExtensionClassInstancePtr;
-                         args: ptr GDExtensionConstVariantPtr;
-                         argc: GDExtensionInt;
-                         ret: GDExtensionVariantPtr;
-                         error: ptr GDExtensionCallError) {.cdecl.} =
+proc invoke_bindcall[T](callable: auto;
+                        isStatic: static[bool];
+                        instance: GDExtensionClassInstancePtr;
+                        args: ptr GDExtensionConstVariantPtr;
+                        argc: GDExtensionInt;
+                        ret: GDExtensionVariantPtr;
+                        error: ptr GDExtensionCallError) {.cdecl.} =
 
   let argArray = cast[ptr UncheckedArray[ptr Variant]](args)
   var argPos = 0'i32

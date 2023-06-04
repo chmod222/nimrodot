@@ -751,7 +751,7 @@ proc calculateHash(
     returnValue: Option[GDExtensionPropertyInfo];
     args: openArray[GDExtensionPropertyInfo];
     defaults: openArray[Variant];
-    flags: uint32): uint32 =
+    flags: set[GDExtensionClassMethodFlags]): uint32 =
   result = murmur3(uint32(returnValue.isSome()))
   result = murmur3(uint32(args.len()), result)
 
@@ -776,9 +776,13 @@ proc calculateHash(
   for default in defaults:
     result = murmur3(uint32(default.hash()), result)
 
-  result = murmur3(uint32((GDEXTENSION_METHOD_FLAG_CONST.ord and flags) > 0), result)
-  result = murmur3(uint32((GDEXTENSION_METHOD_FLAG_VARARG.ord and flags) > 0), result)
+  result = murmur3(uint32(GDEXTENSION_METHOD_FLAG_CONST in flags), result)
+  result = murmur3(uint32(GDEXTENSION_METHOD_FLAG_VARARG in flags), result)
   result = fmix32(result)
+
+func packBits(flags: set[GDExtensionClassMethodFlags]): uint32 =
+  for flag in flags:
+    result = result or uint32(flag)
 
 proc registerMethod*[T](
     name: static[string];
@@ -797,15 +801,13 @@ proc registerMethod*[T](
   let procProperties = M.getProcProps(T)
 
   # Pack flags set[] into uint32 and add virtual
-  var defaultFlags: uint32 = 0
-
-  for flag in procProperties.pflags:
-    defaultFlags = defaultFlags or (uint32 flag)
+  var methodFlags: set[GDExtensionClassMethodFlags] = procProperties.pflags
 
   {.warning[HoleEnumConv]: on.}
   {.hint[ConvFromXtoItselfNotNeeded]: on.}
 
-  if virtual: defaultFlags = defaultFlags or (uint32 GDEXTENSION_METHOD_FLAG_VIRTUAL)
+  if virtual:
+    methodFlags.incl GDEXTENSION_METHOD_FLAG_VIRTUAL
 
   # Collect default values
   var defaultVariants = newSeq[Variant]()
@@ -827,15 +829,6 @@ proc registerMethod*[T](
     rvInfo = addr returnInfo.unsafeGet()[0]
     rvMeta = returnInfo.unsafeGet()[1]
 
-
-  # Highly useful for debugging despite not 100% matching Godot's yet
-  #
-  #var hash = calculateHash(
-  #  returnInfo.map(proc(s: ReturnValueInfo): GDExtensionPropertyInfo = s.returnValue),
-  #  procProperties.pargs,
-  #  defaultVariants,
-  #  defaultFlags)
-
   const (bindcall, ptrcall) = when M.isStatic(T):
     (invoke_static_method[T, M],
      invoke_static_method_ptrcall[T, M])
@@ -850,7 +843,7 @@ proc registerMethod*[T](
     call_func: bindcall,
     ptrcall_func: ptrcall,
 
-    method_flags: defaultFlags,
+    method_flags: methodFlags.packBits(),
 
     has_return_value: GDExtensionBool(returnInfo.isSome()),
     return_value_info: rvInfo,

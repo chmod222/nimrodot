@@ -820,21 +820,14 @@ proc registerMethod*[T](
     for i in 0..high(defaultVariants):
       cast[ptr GDExtensionVariantPtr](addr defaultVariants[i])
 
-  # Unpack return value to get a pointer
-  var returnInfo = procProperties.retval
-  var rvInfo: ptr GDExtensionPropertyInfo = nil
-  var rvMeta = GDEXTENSION_METHOD_ARGUMENT_METADATA_NONE
-
-  if returnInfo.isSome():
-    rvInfo = addr returnInfo.unsafeGet()[0]
-    rvMeta = returnInfo.unsafeGet()[1]
-
   const (bindcall, ptrcall) = when M.isStatic(T):
     (invoke_static_method[T, M],
      invoke_static_method_ptrcall[T, M])
   else:
     (invoke_method[T, M],
      invoke_method_ptrcall[T, M])
+
+  let returnInfo = procProperties.retval
 
   var methodInfo = GDExtensionClassMethodInfo(
     name: addr methodName,
@@ -846,8 +839,8 @@ proc registerMethod*[T](
     method_flags: methodFlags.packBits(),
 
     has_return_value: GDExtensionBool(returnInfo.isSome()),
-    return_value_info: rvInfo,
-    return_value_metadata: rvMeta,
+    return_value_info: returnInfo.map((i) => addr i[0]).get(nil),
+    return_value_metadata: returnInfo.map((i) => i[1]).get(GDEXTENSION_METHOD_ARGUMENT_METADATA_NONE),
 
     argument_count: uint32(procProperties.pargc),
     arguments_info: cast[ptr GDExtensionPropertyInfo](addr procProperties.pargs),

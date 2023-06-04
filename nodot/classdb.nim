@@ -27,6 +27,7 @@ type
 
     properties: OrderedTable[string, ClassProperty]
     methods: OrderedTable[string, MethodInfo]
+    signals: OrderedTable[string, NimNode]
 
     enums: seq[EnumInfo]
     consts: seq[ConstInfo]
@@ -198,6 +199,11 @@ macro notification*(def: typed) =
   classes[def.className].notificationHandlerIdent = def[0]
 
   def
+
+macro signal*(T: typedesc; def: typed) =
+  def[3][0].expectKind(nnkEmpty)
+
+  classes[$T].signals[def[0].strVal()] = newTree(nnkProcTy, def[3], newEmptyNode())
 
 macro property*(def: typed) =
   def.expectKind(nnkProcDef)
@@ -792,7 +798,8 @@ proc registerMethod*[T](
   var className: StringName = $T
   var methodName: StringName = name
 
-  type M = typeOf callable
+  type
+    M = typeOf callable
 
   # Collect parameter and return value properties
   {.hint[ConvFromXtoItselfNotNeeded]: off.}
@@ -896,6 +903,24 @@ proc registerClassConstant*[T](name: string; value: int) =
     GDExtensionBool(false))
 
 
+proc registerSignal*[T](name: string; protoype: typedesc[proc]) =
+  var className: StringName = $T
+  var signalName: StringName = name
+
+  # Collect parameter and return value properties
+  {.hint[ConvFromXtoItselfNotNeeded]: off.}
+
+  let procProperties = protoype.getProcProps(T)
+
+  {.hint[ConvFromXtoItselfNotNeeded]: on.}
+
+  gdInterfacePtr.classdb_register_extension_class_signal(
+    gdTokenPtr,
+    addr className,
+    addr signalName,
+    cast[ptr GDExtensionPropertyInfo](addr procProperties.pargs),
+    procProperties.pargc)
+
 proc generateDefaultsTuple(mi: MethodInfo): NimNode =
   result = newTree(nnkTupleConstr)
 
@@ -976,3 +1001,13 @@ macro register*() =
         registerClassConstant[T](name, value)
 
       result.add(constReg)
+
+    for signalName, signalDef in regInfo.signals:
+      let signalReg = genAst(
+          T = regInfo.typeNode,
+          name = signalName,
+          value = signalDef):
+
+        registerSignal[T](name, value)
+
+      result.add(signalReg)

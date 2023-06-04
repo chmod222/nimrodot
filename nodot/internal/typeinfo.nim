@@ -139,12 +139,12 @@ macro getProcProps(M: typed; T: typedesc): auto =
   if isVararg: procFlags &= ident"GDEXTENSION_METHOD_FLAG_VARARG"
 
   result = genAst(procArgc = argc, isStatic, procArgs = args, procArgsMeta = argsMeta, procFlags, rval):
-    tuple[pargc: int,
+    tuple[pargc: GDExtensionInt,
           pargs: array[procArgc, GDExtensionPropertyInfo],
           pmeta: array[procArgc, GDExtensionClassMethodArgumentMetadata],
           retval: Option[(GDExtensionPropertyInfo, GDExtensionClassMethodArgumentMetadata)],
           pflags: system.set[GDExtensionClassMethodFlags]](
-      pargc: procArgc,
+      pargc: GDExtensionInt(procArgc),
       pargs: procArgs,
       pmeta: procArgsMeta,
       retval:  rval,

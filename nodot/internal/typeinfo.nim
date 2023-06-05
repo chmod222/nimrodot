@@ -79,6 +79,16 @@ macro isStatic(M: typed; T: typedesc): bool =
   genAst(isStatic):
     isStatic
 
+proc getPropertyInfo*[T](name: static[string] = ""): GDExtensionPropertyInfo =
+  GDExtensionPropertyInfo(
+    `type`: variantTypeId(T),
+    name: staticStringName(name),
+    class_name: gdClassName(T),
+    hint: uint32(propertyHint(T)),
+    hint_string: staticStringName(""),
+    usage: uint32(propertyUsage(T)))
+
+
 macro getProcProps(M: typed; T: typedesc): auto =
   let procDef = M.getType()[1].getTypeImpl()[0]
 
@@ -95,15 +105,7 @@ macro getProcProps(M: typed; T: typedesc): auto =
       none (GDExtensionPropertyInfo, GDExtensionClassMethodArgumentMetadata)
   else:
     genAst(R = procDef[0]) do:
-      some (
-        GDExtensionPropertyInfo(
-          `type`: variantTypeId(typeOf R),
-          name: staticStringName(""),
-          class_name: gdClassName(typeOf R),
-          hint: uint32(propertyHint(typeOf R)),
-          hint_string: staticStringName(""),
-          usage: uint32(propertyUsage(typeOf R))),
-        typeMetaData(typeOf R))
+      some (getPropertyInfo[R](), typeMetaData(typeOf R))
 
   if len(procDef) > 1:
     let offset = if procDef[1][^2].isSelf(T): 2 else: 1
@@ -119,26 +121,21 @@ macro getProcProps(M: typed; T: typedesc): auto =
 
         inc argc
 
-        let argMeta = genAst(P = defs[^2]):
+        argsMeta.add genAst(P = defs[^2]) do:
           typeMetaData(typeOf P)
 
-        let arg = genAst(n = binding.strVal(), P = defs[^2]):
-          GDExtensionPropertyInfo(
-           `type`: variantTypeId(typeOf P),
-            name: staticStringName(n),
-            class_name: gdClassName(typeOf P),
-            hint: uint32(propertyHint(typeOf P)),
-            hint_string: staticStringName(""),
-            usage: uint32(propertyUsage(typeOf P))
-          )
-
-        argsMeta &= argMeta
-        args &= arg
+        args.add genAst(n = binding.strVal(), P = defs[^2]) do:
+          getPropertyInfo[P](n)
 
   if isStatic: procFlags &= ident"GDEXTENSION_METHOD_FLAG_STATIC"
   if isVararg: procFlags &= ident"GDEXTENSION_METHOD_FLAG_VARARG"
 
-  result = genAst(procArgc = argc, isStatic, procArgs = args, procArgsMeta = argsMeta, procFlags, rval):
+  result = genAst(
+      procArgc = argc,
+      procArgs = args,
+      procArgsMeta = argsMeta,
+      procFlags,
+      rval):
     tuple[pargc: GDExtensionInt,
           pargs: array[procArgc, GDExtensionPropertyInfo],
           pmeta: array[procArgc, GDExtensionClassMethodArgumentMetadata],

@@ -902,6 +902,46 @@ proc registerClassConstant*[T](name: string; value: int) =
     GDExtensionInt(value),
     GDExtensionBool(false))
 
+proc registerProperty*[T, P](name, setter, getter: string) =
+  var className: StringName = $T
+  var propertyName: StringName = name
+
+  var setterName: StringName = setter
+  var getterName: StringName = getter
+
+  var nameName: StringName = name
+
+  var info = getPropertyInfo[P]()
+  info.name = addr nameName
+
+  gdInterfacePtr.classdb_register_extension_class_property(
+    gdTokenPtr,
+    addr className,
+    addr info,
+    addr setterName,
+    addr getterName)
+
+proc registerPropertyGroup*[T](name, prefix: string) =
+  var className: StringName = $T
+  var groupName: StringName = $T
+  var prefixName: StringName = $T
+
+  gdInterfacePtr.classdb_register_extension_class_property_group(
+    gdTokenPtr,
+    addr className,
+    addr groupName,
+    addr prefixName)
+
+proc registerPropertySubgroup*[T](name, prefix: string) =
+  var className: StringName = $T
+  var groupName: StringName = $T
+  var prefixName: StringName = $T
+
+  gdInterfacePtr.classdb_register_extension_class_property_subgroup(
+    gdTokenPtr,
+    addr className,
+    addr groupName,
+    addr prefixName)
 
 proc registerSignal*[T](name: string; protoype: typedesc[proc]) =
   var className: StringName = $T

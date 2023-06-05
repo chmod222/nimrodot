@@ -263,19 +263,16 @@ macro gd_builtin_method*(ty: typed; hash: static[int64]; prototype: untyped) =
     let varArgId = varArgs.unsafeGet()[0]
 
     result[^1] = genAst(ty, functionName, hash, argc, args, varArgId, selfPtr, resultPtr) do:
-      var p {.global.} = block:
-        var gdFuncName = functionName.toGodotStringName()
-
-        gdInterfacePtr.variant_get_ptr_builtin_method(ty.variantTypeId, addr gdFuncName, hash)
-
+      var p {.global.} = getBuiltinMethodPtr[ty](functionName, hash)
       var argPtrs = @args
 
       for i in 0..high(varArgId):
         argPtrs &= pointer(unsafeAddr varArgId[i])
 
       p(
-        cast[GDExtensionTypePtr](resultPtr),
+        cast[GDExtensionTypePtr](selfPtr),
         cast[ptr GDExtensionConstTypePtr](addr argPtrs[0]),
+        cast[GDExtensionTypePtr](resultPtr),
         cint(argc + len(varArgId)))
 
 macro gd_builtin_set*(ty: typed; prototype: untyped) =

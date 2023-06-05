@@ -93,8 +93,6 @@ macro callPtrFunc(
     argsArray: ptr UncheckedArray[GDExtensionConstTypePtr]): auto =
   let typedFunc = def.getTypeInst()[0]
 
-  var argsStart = 1
-
   result = newTree(nnkCall, def)
 
   if len(typedFunc) > 1:

@@ -70,15 +70,25 @@ const $cleanDupe*: $enumName = $enumName($value)
 import ../../ref_helper
 #    var parent = apiDef.classTypes[def.inherits.unsafeGet]
 #
-#    while parent.isRefCounted:
+#    while true:
 #      if parent.name != def.inherits.unsafeGet:
 #        let parentModule = $parent.name.moduleName().safeImport()
 import ../types/$parentModule
-#        end if
+#      end if
 
+#      if parent.isRefcounted:
 converter to$parent.name*(x: sink Ref[$def.name]): Ref[$parent.name] =
   x.castRef($parent.name)
+#      else:
+converter to$parent.name*(x: sink Ref[$def.name]): $parent.name =
+  x.castRef($parent.name)[]
+#      end if
 
+#
+#      if parent.inherits.isNone:
+#        break
+#      end if
+#
 #      parent = apiDef.classTypes[parent.inherits.unsafeGet]
 #    end while
 #  end if

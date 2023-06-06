@@ -246,11 +246,11 @@ macro revertQuery*(def: typed) =
   def[3][0][0].expectIdent("Option")
   def[3][0][1].expectIdent("Variant")
 
-  def[3][1][1].expectKind(nnkVarTy)
+  def[3][1][1].expectKind(nnkSym)
 
   def[3][2][1].expectIdent("StringName")
 
-  let classType = def[3][1][1][0]
+  let classType = def[3][1][1]
 
   classes[classType.strVal()].revertQueryIdent = def[0]
 
@@ -270,7 +270,7 @@ macro propertyQuery*(def: typed) =
   def[3][2][^2][0][0].expectIdent("seq")
   def[3][2][^2][0][1].expectIdent("GDExtensionPropertyInfo")
 
-  let classType = def[3][1][1][0]
+  let classType = def[3][1][1]
 
   classes[classType.strVal()].listPropertiesIdent = def[0]
 
@@ -278,7 +278,7 @@ macro propertyQuery*(def: typed) =
 
 macro getProperty*(def: typed) =
   def.expectClassReceiverProc()
-  let classType = def[3][1][1][0]
+  let classType = def[3][1][1]
 
   classes[classType.strVal()].getPropertyIdent = def[0]
 
@@ -286,7 +286,7 @@ macro getProperty*(def: typed) =
 
 macro setProperty*(def: typed) =
   def.expectClassReceiverProc()
-  let classType = def[3][1][1][0]
+  let classType = def[3][1][1]
 
   classes[classType.strVal()].setPropertyIdent = def[0]
 

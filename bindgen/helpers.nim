@@ -130,7 +130,7 @@ func moduleName*(class: ClassDefinition): string =
   class.name.moduleName()
 
 func render*(t: GodotType): string =
-  let actualType = t.metaType.get(t.rawType)
+  let actualType = t.rawType
   let isMember = t.kind == tkField
 
   result = case actualType:

@@ -15,7 +15,7 @@
 #
 type
 #      let enumName = enu.name
-  $enumName* {.size: sizeof(cint).} = enum
+  $enumName* {.size: sizeof(uint64).} = enum
 #      for value in enu.values.sortedByIt(it.value):
 #        if lastValue.isSome() and lastValue.unsafeGet() == value.value:
 #          if value.value notin duplicates:

@@ -62,7 +62,7 @@ type
 #      # associated enums don't have duplicate values for now, so we can
 #      # keep it simple. They do share names across modules so we do need
 #      # to declare them as pure however.
-  $enumName* {.size: sizeof(cint).} = enum
+  $enumName* {.size: sizeof(uint64).} = enum
 #      for field in enu.values.sortedByIt(it.value):
 #        let cleanName = field.cleanName(enu)
     $cleanName = $field.value

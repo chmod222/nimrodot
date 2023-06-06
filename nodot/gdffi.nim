@@ -110,6 +110,12 @@ func getVarArgs(prototype: NimNode): Option[NimNode] =
 
   none NimNode
 
+template getArgPointer*[T](p: T): pointer =
+  when p is AnyObject:
+    p.opaque
+  else:
+    addr p
+
 func genArgsList(prototype: NimNode; argc: ptr int; ignoreFirst: bool = false): NimNode =
   result = newTree(nnkBracket)
 
@@ -132,7 +138,7 @@ func genArgsList(prototype: NimNode; argc: ptr int; ignoreFirst: bool = false): 
       inc argc[]
 
       result.add genAst(formalArg) do:
-        pointer(unsafeAddr formalArg)
+        getArgPointer(formalArg)
 
 func getNameFromProto(proto: NimNode): string =
   if proto[0].kind in {nnkIdent, nnkSym}:

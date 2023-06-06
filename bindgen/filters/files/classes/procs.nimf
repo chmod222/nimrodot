@@ -1,6 +1,6 @@
 #? stdtmpl() | standard
 #
-#import std/[options, enumerate, sets]
+#import std/[options, sets]
 #
 #import ../../../api
 #import ../../../helpers

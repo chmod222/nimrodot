@@ -7,7 +7,7 @@ import ./builtins/"string" as str
 import ./classes/types/"object"
 import ./enums
 
-import std/[macros, genasts, tables, strutils, options, enumutils, typetraits, sugar, enumerate]
+import std/[macros, genasts, tables, strutils, options, enumutils, typetraits, sugar]
 
 type
   ClassRegistration = object
@@ -581,7 +581,7 @@ proc list_class_properties[T](instance: GDExtensionClassInstancePtr;
 
   var propertyInfos = cast[ptr UncheckedArray[GDExtensionPropertyInfo]](addr prefixed[].elems)
 
-  for i, property in enumerate(properties):
+  for i, property in properties:
     propertyInfos[i] = property
 
   result = cast[ptr GDExtensionPropertyInfo](addr prefixed[].elems)

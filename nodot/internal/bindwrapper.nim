@@ -44,7 +44,7 @@ macro callBindFunc(
 
       inc argsStart
 
-    for i, arg in enumerate(typedFunc[argsStart..^1]):
+    for i, arg in typedFunc[argsStart..^1]:
       if arg[^2].isVarArg():
         # If we hit a varargs[T] parameter, generate a preamble statement to fill a seq[]
         # and wrap our original result into a block statement.
@@ -76,7 +76,7 @@ func stuffArguments(
     offset: static[int];
     argsArray: NimNode) =
 
-  for i, arg in enumerate(typedFunc[offset..^1]):
+  for i, arg in typedFunc[offset..^1]:
     let argBody = if arg[^2].isVarArg():
       # Cannot be done using ptrcall, so we leave it empty in case
       # a vararg function is ever called using ptrcall.

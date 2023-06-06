@@ -1,6 +1,6 @@
 #? stdtmpl() | standard
 #
-#import std/[tables, options, algorithm, sequtils, enumerate, strutils, sets]
+#import std/[tables, options, algorithm, sequtils, strutils, sets]
 #
 #import ../../../api
 #import ../../../helpers

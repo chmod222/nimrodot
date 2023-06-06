@@ -1,6 +1,6 @@
 #? stdtmpl() | standard
 #
-#import std/[tables, enumerate, sequtils, strutils]
+#import std/[tables, sequtils, strutils]
 #
 #import ../../../helpers
 #import ../../utils/"conditional.nimf"

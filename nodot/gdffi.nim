@@ -112,7 +112,10 @@ func getVarArgs(prototype: NimNode): Option[NimNode] =
 
 template getArgPointer*[T](p: T): pointer =
   when p is AnyObject:
-    p.opaque
+    if p.isNil():
+      nil
+    else:
+      p.opaque
   else:
     addr p
 

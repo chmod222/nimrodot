@@ -14,7 +14,7 @@ export interface_ptrs
 export utils
 
 proc getSingleton*[T: Object](name: string): T =
-  var name = name.toGodotStringName()
+  var name = &name
 
   T(opaque: gdInterfacePtr.global_get_singleton(addr name))
 

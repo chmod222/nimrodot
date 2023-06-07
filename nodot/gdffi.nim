@@ -9,7 +9,7 @@ import ./builtins/types
 
 import ./classes/types/"object"
 
-export utils.toGodotStringName
+export utils.`&`
 
 type
   ReturnInfo = object
@@ -168,18 +168,18 @@ func getNameFromProto(proto: NimNode): string =
 # We need to put these into dedicated functions rather than `block:` statements due to
 # bad codegen with destructors present.
 proc getUtilityFunctionPtr(fun: static[string]; hash: static[int64]): GDExtensionPtrUtilityFunction =
-  var gdFuncName = fun.toGodotStringName()
+  var gdFuncName = &fun
 
   gdInterfacePtr.variant_get_ptr_utility_function(addr gdFuncName, hash)
 
 proc getBuiltinMethodPtr[T](meth: static[string]; hash: static[int64]): GDExtensionPtrBuiltInMethod =
-  var gdFuncName = meth.toGodotStringName()
+  var gdFuncName = &meth
 
   gdInterfacePtr.variant_get_ptr_builtin_method(T.variantTypeId, addr gdFuncName, hash)
 
 proc getClassMethodBindPtr*(cls, meth: static[string]; hash: static[int64]): GDExtensionMethodBindPtr =
-  var gdClassName = cls.toGodotStringName()
-  var gdMethName = meth.toGodotStringName()
+  var gdClassName = &cls
+  var gdMethName = &meth
 
   gdInterfacePtr.classdb_get_method_bind(addr gdClassName, addr gdMethName, hash)
 
@@ -304,7 +304,7 @@ macro gd_builtin_set*(ty: typed; prototype: untyped) =
   result = prototype
   result[^1] = genAst(propertyName, ty, selfPtr, valPtr):
     var p {.global.} = block:
-      var gdFuncName = propertyName.toGodotStringName()
+      var gdFuncName = &propertyName
 
       gdInterfacePtr.variant_get_ptr_setter(ty.variantTypeId, addr gdFuncName)
 
@@ -436,7 +436,7 @@ macro gd_class_ctor*(prototype: untyped) =
 
   result = prototype
   result[^1] = genAst(selfType, selfTypeStr, fullSelfType, result = ident"result") do:
-    var name = selfTypeStr.toGodotStringName()
+    var name = &selfTypeStr
 
     constructResultObject(
       fullSelfType,
@@ -553,7 +553,7 @@ macro gd_builtin_get*(ty: typed; prototype: untyped) =
   result = prototype
   result[^1] = genAst(propertyName, ty, selfPtr, resultPtr):
     var p {.global.} = block:
-      var gdFuncName = propertyName.toGodotStringName()
+      var gdFuncName = &propertyName
 
       gdInterfacePtr.variant_get_ptr_getter(ty.variantTypeId, addr gdFuncName)
 
@@ -564,7 +564,7 @@ macro gd_builtin_get*(ty: typed; prototype: untyped) =
 # Constants
 
 proc gd_constant*[K, T](name: static[string]): T =
-  var gdName = toGodotStringName(name)
+  var gdName = &name
   var resVariant: Variant
 
   gdInterfacePtr.variant_get_constant_value(

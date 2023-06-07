@@ -16,8 +16,8 @@ import ./classes/types/"object"
 # Re-declare these so we don't have to cyclic import refcounted.nim and gdffi.
 # XXX: KEEP IN SYNC.
 proc getClassMethodBindPtr(cls, meth: static[string]; hash: static[int64]): GDExtensionMethodBindPtr =
-  var gdClassName = cls.toGodotStringName()
-  var gdMethName = meth.toGodotStringName()
+  var gdClassName = &cls
+  var gdMethName = &meth
 
   gdInterfacePtr.classdb_get_method_bind(addr gdClassName, addr gdMethName, hash)
 

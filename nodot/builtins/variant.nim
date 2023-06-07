@@ -30,9 +30,18 @@ proc newVariant*(): Variant =
 proc newVariant*(`from`: Variant): Variant =
   gdInterfacePtr.variant_new_copy(addr result, unsafeAddr `from`)
 
+import ../ref_helper
+
 proc newVariant*[T](`from`: T): Variant =
   when T is Variant:
     `from`
+  elif T is Ref or T is AnyObject:
+    var fromType {.global.} = gdInterfacePtr.get_variant_from_type_constructor(
+      cast[GDExtensionVariantType](GDEXTENSION_VARIANT_TYPE_OBJECT))
+
+    # This works for both Ref[T] and naked objects, due to rc[]: Object (+ auto deref)
+    # and Object[]: Object:Object without auto deref
+    fromType(addr result, addr `from`[].opaque)
   else:
     type Bt = mapBuiltinType T
 

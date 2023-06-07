@@ -93,7 +93,7 @@ func reduceAddr(s: ParamInfo): NimNode =
   elif s.isRefCountWrapper:
     newCall("addr".ident(), newDotExpr(newTree(nnkBracketExpr, s.binding), "opaque".ident()))
   else:
-    newCall("getResultPtr".ident())
+    newCall("getSelfPtr".ident(), s.binding)
 
 # Called in the second run-around of the macro expansion once type information
 # is available to determine if we are dealing with an object type or a builtin
@@ -102,6 +102,14 @@ template getResultPtr*(): pointer {.dirty.} =
     addr result.opaque
   elif compiles(result):
     addr result
+  else:
+    nil
+
+template getSelfPtr*(binding: typed): pointer {.dirty.} =
+  when compiles(binding.opaque):
+    addr binding.opaque
+  elif compiles(binding):
+    addr binding
   else:
     nil
 
@@ -153,6 +161,9 @@ func genArgsList(prototype: NimNode; argc: ptr int; ignoreFirst: bool = false): 
 
       result.add genAst(formalArg) do:
         getArgPointer(formalArg)
+
+  result = genAst(arrayLit = result, argc = argc[]) do:
+    (array[argc, GDExtensionConstTypePtr])(arrayLit)
 
 func getNameFromProto(proto: NimNode): string =
   if proto[0].kind in {nnkIdent, nnkSym}:
@@ -215,7 +226,7 @@ macro gd_utility*(hash: static[int64]; prototype: untyped) =
       var argPtrs = @args
 
       for i in 0..high(varArgId):
-        argPtrs &= pointer(unsafeAddr varArgId[i])
+        argPtrs &= getArgPointer varArgId[i]
 
       p(
         cast[GDExtensionTypePtr](resultPtr),
@@ -264,7 +275,7 @@ macro gd_builtin_method*(ty: typed; hash: static[int64]; prototype: untyped) =
   let selfPtr = prototype.resolveSelf().reduceAddr()
   let resultPtr = prototype.resolveReturn().reducePtr()
 
-  let args = prototype.genArgsList(addr argc)
+  let args = prototype.genArgsList(addr argc, true)
   let varArgs = prototype.getVarArgs()
 
   result = prototype
@@ -287,13 +298,13 @@ macro gd_builtin_method*(ty: typed; hash: static[int64]; prototype: untyped) =
       var argPtrs = @args
 
       for i in 0..high(varArgId):
-        argPtrs &= pointer(unsafeAddr varArgId[i])
+        argPtrs &= getArgPointer varArgId[i]
 
       p(
         cast[GDExtensionTypePtr](selfPtr),
-        cast[ptr GDExtensionConstTypePtr](addr argPtrs[0]),
+        cast[ptr GDExtensionConstTypePtr](if argPtrs.len() > 0: addr argPtrs[0] else: nil),
         cast[GDExtensionTypePtr](resultPtr),
-        cint(argc + len(varArgId)))
+        cint(argPtrs.len()))
 
 macro gd_builtin_set*(ty: typed; prototype: untyped) =
   let propertyName = prototype[0][1][0].strVal()

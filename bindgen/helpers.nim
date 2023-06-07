@@ -635,6 +635,12 @@ proc render*(
   var args = newSeq[CombinedArgs]()
 
   let selfType = fromSelf(def)
+  let isRc = when def is ClassDefinition:
+    def.is_refcounted
+  else:
+    false
+
+  var genericParam = none string
 
   if meth.is_static:
     var tmp = selfType
@@ -643,10 +649,17 @@ proc render*(
 
     args &= (bindings: @["_"], `type`: tmp.asTypeDesc())
   else:
-    if meth.is_const or def is ClassDefinition:
-      args &= (bindings: @["self"], `type`: selfType)
+    if isRc and not anonymous:
+      var genericRefT = "T".fromVarious(def)
+      genericParam = some def.name
+      genericRefT.flags.incl tfRefType
+
+      args &= (bindings: @["self"], `type`: genericRefT)
     else:
-      args &= (bindings: @["self"], `type`: selfType.asVarType())
+      if meth.is_const or def is ClassDefinition:
+        args &= (bindings: @["self"], `type`: selfType)
+      else:
+        args &= (bindings: @["self"], `type`: selfType.asVarType())
 
   for defArg in meth.arguments.get(@[]):
     let defArgType = defArg.fromParameter(def)
@@ -670,7 +683,12 @@ proc render*(
   if anonymous:
     result = "proc" & args.renderArgs()
   else:
-    result = "proc " & meth.name.safeIdent() & "*" & args.renderArgs()
+    if genericParam.isSome():
+      let constraint = "[T: " & genericParam.unsafeGet() & "]"
+
+      result = "proc " & meth.name.safeIdent() & "*" & constraint & args.renderArgs()
+    else:
+      result = "proc " & meth.name.safeIdent() & "*" & args.renderArgs()
 
   if meth.return_value.isSome():
     let ret = meth.return_value.unsafeGet().fromReturn(def)

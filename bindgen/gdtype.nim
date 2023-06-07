@@ -85,7 +85,7 @@ proc fromField*(field: MemberOffset; def: BuiltinClassDefinition): GodotType =
 proc fromProperty*(prop: PropertyDefinition; def: BuiltinClassDefinition): GodotType =
   cleanType GodotType(dependant: some def.name, kind: tkOther, rawType: prop.`type`, metaType: none string)
 
-proc fromVarious*(t: string; def: BuiltinClassDefinition): GodotType =
+proc fromVarious*(t: string; def: ClassDefinition | BuiltinClassDefinition): GodotType =
   cleanType GodotType(dependant: some def.name, kind: tkOther, rawType: t, metaType: none string)
 
 proc fromParameter*(arg: FunctionArgument; def: ClassDefinition | BuiltinClassDefinition): GodotType =

@@ -11,6 +11,7 @@ import ./interface_ptrs
 import ./utils
 import ./ffi
 import ./builtins/types/stringname
+import ./classes/types/"object"
 
 # Re-declare these so we don't have to cyclic import refcounted.nim and gdffi.
 # XXX: KEEP IN SYNC.
@@ -98,6 +99,9 @@ proc castRef*[T, U](r: sink Ref[T]; _: typedesc[U]): Ref[U] =
 proc `[]`*[T](r: Ref[T]): lent T =
   ## Return a lent reference to the contained value.
   r.reference
+
+converter toObject*[T](x: sink Ref[T]): Object =
+  x[]
 
 # Owned[T] implementation
 

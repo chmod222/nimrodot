@@ -21,6 +21,7 @@ type
     isStatic: bool
 
     fullType: NimNode
+    genericConstraint: NimNode
     binding: NimNode
 
 func resolveReturn(prototype: NimNode): ReturnInfo =
@@ -30,12 +31,18 @@ func resolveReturn(prototype: NimNode): ReturnInfo =
     result.fullType = prototype[3][0]
 
 func resolveSelf(prototype: NimNode): ParamInfo =
+  result.genericConstraint = newEmptyNode()
+
   if len(prototype[3]) > 1 and prototype[3][1][0] == "_".ident():
     result.fullType = prototype[3][1][1][1]
     result.isStatic = true
   else:
     result.isStatic = false
     result.binding = prototype[3][1][0]
+
+    # Check for `[T: U](self: Ref[T])`
+    if prototype[2].kind != nnkEmpty:
+      result.genericConstraint = prototype[2][0][1]
 
     if prototype[3][1][^2].kind == nnkVarTy:
       result.fullType = prototype[3][1][1][0]
@@ -46,6 +53,10 @@ func isRefCountWrapper(s: ParamInfo | ReturnInfo): bool =
   s.fullType.kind == nnkBracketExpr and s.fullType[0].strVal == "Ref"
 
 func reduceType(s: ParamInfo | ReturnInfo): NimNode =
+  when s is ParamInfo:
+    if s.genericConstraint.kind != nnkEmpty:
+      return s.genericConstraint
+
   if s.fullType.kind == nnkBracketExpr:
     s.fullType[1]
   else:

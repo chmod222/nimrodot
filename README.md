@@ -17,7 +17,7 @@ Note that this is not yet usable for actual development.
   - Bindings of all utility functions
     - [x] Fixed-arity and variadic calls
 
-  - Proper Godot classes:
+  - Godot classes:
     - [x] Basic usage
     - [x] Destruction
     - [x] Calling methods
@@ -39,20 +39,22 @@ Note that this is not yet usable for actual development.
       - [x] Variadic
     - [x] Builtin Properties (`.property_name` in Godot)
       - Lower level exposure implemented, higher level wrapper missing
-    - [ ] Signals
+    - [X] Signals
       - Should work, still needs testing
-
-## What does not work:
-  - Memory management for all cases
-    - `RefCounted` and manually managed objects *should* work, but currently
-       all non-refcounted objects passed into this library are assumed to be owned by it
-       and will be freed without mercy even if they are lent out references.
-
-  - Most likely some other things that can not be tested as of yet
 
 ## What somewhat works:
   - TypedArray[T] does not enforce the `T` or `Typed` part so far, but with some self discipline it
     will work until compile time enforcements are implemented.
+
+  - Memory management
+    - `RefCounted` (and it's associated Ref[T] wrapper) and manually managed objects *should* work,
+       but need testing to iron out any lurking issues. Objects not deriving from `RefCounted` need
+       some discipline to work with for now, until a nicer abstraction over them makes life easier.
+
+## What does not work:
+  - Most likely some other things that can not be tested as of yet. The GDExtension interface is
+    very sparsely documented for now and surprises still lurk in some corners where assumption and
+    reality drift apart.
 
 ## How it works:
 
@@ -83,6 +85,8 @@ proc lerp*(self: Vector2; to: Vector2; weight: float64): Vector2
 These do the job of caching the various function pointers and converting the arguments and are implemented in the `nodot/gdffi` module.
 
 ## Usage Example (Proof of Concept)
+
+(A longer and more useful example is contained in the [examples](/examples) folder.
 
 ```nim
 # If not specified, entry point defaults to "gdext_init"

@@ -2,11 +2,11 @@ import std/macros
 
 proc NimMain() {.cdecl, importc.}
 
-import nodot/ffi
-import nodot/interface_ptrs
-import nodot/ref_helper
-import nodot/classes/types/"object"
-import nodot/utils
+import nimrodot/ffi
+import nimrodot/interface_ptrs
+import nimrodot/ref_helper
+import nimrodot/classes/types/"object"
+import nimrodot/utils
 
 export ref_helper
 export ffi

@@ -1,10 +1,10 @@
-import nodot
-import nodot/classdb
-import nodot/builtins/variant
-import nodot/builtins/stringname
-import nodot/builtins/"string"
-import nodot/classes/node
-import nodot/classes/refcounted
+import nimrodot
+import nimrodot/classdb
+import nimrodot/builtins/variant
+import nimrodot/builtins/stringname
+import nimrodot/builtins/"string"
+import nimrodot/classes/node
+import nimrodot/classes/refcounted
 
 import std/options
 import std/typetraits
@@ -65,7 +65,7 @@ proc set_field(self: ExportedType; newVal: int) {.classMethod.} =
 proc get_field(self: ExportedType): int {.classMethod.} =
   self.someField
 
-# Static method, renamed via {.name.}
+# Static method, renamed via {.name.}.
 proc call_stat(a: int) {.staticMethod: ExportedType, name: "static_method".} =
   discard
 

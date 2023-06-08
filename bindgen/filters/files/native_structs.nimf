@@ -9,7 +9,7 @@
 #  let structs = apiDef.native_structures
 #
 #  result = autogenDisclaimer()
-#  result &= structs.renderImportList({roNoNatives}, "nodot")
+#  result &= structs.renderImportList({roNoNatives}, "nimrodot")
 #
 type
 #  for native in structs:

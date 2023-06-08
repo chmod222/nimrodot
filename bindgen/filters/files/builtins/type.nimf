@@ -23,7 +23,7 @@ import ../../api
 
 #  end if
 #
-#  result &= def.renderImportList({roStructFields}, "nodot/builtins/types")
+#  result &= def.renderImportList({roStructFields}, "nimrodot/builtins/types")
 #
 #  # if not def.isOpaque(apiDef):
 #  #   for members, cfg in memberGroups:

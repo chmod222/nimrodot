@@ -1,4 +1,4 @@
-import ../nodot
+import ../nimrodot
 
 import ./interface_ptrs
 import ./builtins/types

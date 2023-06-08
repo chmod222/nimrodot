@@ -37,7 +37,7 @@ when isMainModule:
     .parentDir()
     .parentDir()
 
-  let sourceRoot = projectRoot / "nodot"
+  let sourceRoot = projectRoot / "nimrodot"
   let apiFile = sourceApiFile.importApi()
 
   cpFile(projectRoot / "contrib/gdextension_interface.nim", sourceRoot  / "ffi.nim")

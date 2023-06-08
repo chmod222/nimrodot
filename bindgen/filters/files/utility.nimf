@@ -14,7 +14,7 @@
 import ./gdffi
 #
 
-#  result &= funcs.renderImportList({}, "nodot")
+#  result &= funcs.renderImportList({}, "nimrodot")
 #  for fn in funcs:
 $fn.render
   {.gd_utility($fn.hash).}

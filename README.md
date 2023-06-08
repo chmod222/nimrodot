@@ -66,13 +66,13 @@ This is also called automatically in the pre-install step.
 
 This generates the following modules:
 
-- `nodot/api`: Very high level definitions.
-- `nodot/enums`: Global enumerations and bitfields.
-- `nodot/utility_functions`: Utility functions.
-- `nodot/builtins/types/*` (except `variant`): Builtin class type
-- `nodot/builtins/*` (except `variant`): Builtin class procs
-- `nodot/classes/types/*`: Godot Classes
-- `nodot/classes/*`: Godot Classes
+- `nimrodot/api`: Very high level definitions.
+- `nimrodot/enums`: Global enumerations and bitfields.
+- `nimrodot/utility_functions`: Utility functions.
+- `nimrodot/builtins/types/*` (except `variant`): Builtin class type
+- `nimrodot/builtins/*` (except `variant`): Builtin class procs
+- `nimrodot/classes/types/*`: Godot Classes
+- `nimrodot/classes/*`: Godot Classes
 
 Most methods are stubbed with various Macros that implement the actual glue
 on end-compile, i.e.
@@ -82,7 +82,7 @@ proc lerp*(self: Vector2; to: Vector2; weight: float64): Vector2
   {.gd_builtin_method(Vector2, 4250033116).}
 ```
 
-These do the job of caching the various function pointers and converting the arguments and are implemented in the `nodot/gdffi` module.
+These do the job of caching the various function pointers and converting the arguments and are implemented in the `nimrodot/gdffi` module.
 
 ## Usage Example (Proof of Concept)
 

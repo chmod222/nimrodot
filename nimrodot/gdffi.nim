@@ -432,7 +432,7 @@ macro gd_builtin_operator*(ty: typed; prototype: untyped) =
 
 
 # Classes
-import ../nodot/ref_helper
+import ../nimrodot/ref_helper
 
 template constructResultObject[T](dest: typedesc[Ref[T]]; raw: T): Ref[T] =
   newRefShallow(raw)

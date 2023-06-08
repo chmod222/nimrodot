@@ -30,7 +30,7 @@ type Thread = thread.Thread
 
 #  result &= def.renderImportList(
 #    {roProperties, roMethods, roStructFields, roConstructors, roIndexes, roOperators},
-#     "nodot/classes", def.inherits)
+#     "nimrodot/classes", def.inherits)
 #
 import internal/instance_funcs
 

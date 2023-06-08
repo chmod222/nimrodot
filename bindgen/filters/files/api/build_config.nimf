@@ -7,7 +7,7 @@
 #
 #proc generateBuildConfig*(): string =
 #  result = "# Compile with single precision floats, unless defined otherwise.\n"
-const floatPrecision = when defined(nodotDoublePrecision):
+const floatPrecision = when defined(nimrodotDoublePrecision):
   "double"
 else:
   "float"

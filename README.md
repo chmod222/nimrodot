@@ -37,8 +37,10 @@ Note that this is not yet usable for actual development.
       - [x] Bindcall
       - [x] ptrcall
       - [x] Variadic
-    - [ ] Builtin Properties (`.property_name` in Godot)
+    - [x] Builtin Properties (`.property_name` in Godot)
+      - Lower level exposure implemented, higher level wrapper missing
     - [ ] Signals
+      - Should work, still needs testing
 
 ## What does not work:
   - Memory management for all cases

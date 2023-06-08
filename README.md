@@ -2,7 +2,8 @@
 This project is a work in progress implementation / proof of concept of the
 Godot 4 GDExtension API.
 
-Note that this is not yet usable for actual development.
+Be aware that this is not yet usable for actual development unless you are prepared to live with
+a very much moving target until all the pieces have fallen into place.
 
 ## Status:
   - [x] Library initialization / deinitialization hooks

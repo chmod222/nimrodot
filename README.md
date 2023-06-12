@@ -5,6 +5,9 @@ Godot 4 GDExtension API.
 Be aware that this is not yet usable for actual development unless you are prepared to live with
 a very much moving target until all the pieces have fallen into place.
 
+Building it requires Nim 2.0 RC because by the time this project is far along enough to be used,
+Nim 2.0 should be released.
+
 ## Status:
   - [x] Library initialization / deinitialization hooks
 

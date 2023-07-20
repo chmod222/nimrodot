@@ -418,11 +418,16 @@ type
 ##  INTERFACE
 
 type
+  GDExtensionInterfaceGetProcAddress* = proc (name: cstring): pointer {.cdecl.}
+
+  GDExtensionGodotVersion* {.bycopy.} = object
+    major*: uint32
+    minor*: uint32
+    patch*: uint32
+    fullName*: cstring
+
   GDExtensionInterface* {.bycopy.} = object
-    version_major*: uint32
-    version_minor*: uint32
-    version_patch*: uint32
-    version_string*: cstring
+    get_godot_version*: proc (r_godot_version: ptr GDExtensionGodotVersion) {.cdecl.}
     ##  GODOT CORE
     mem_alloc*: proc (p_bytes: csize_t): pointer {.cdecl.}
     mem_realloc*: proc (p_ptr: pointer; p_bytes: csize_t): pointer {.cdecl.}
@@ -848,6 +853,15 @@ type
     ##  Unregistering a parent class before a class that inherits it will result in failure. Inheritors must be unregistered first.
     get_library_path*: proc (p_library: GDExtensionClassLibraryPtr;
                            r_path: GDExtensionStringPtr) {.cdecl.}
+    editor_add_plugin*: proc (p_class_name: GDExtensionConstStringNamePtr) {.cdecl.}
+    editor_remove_plugin*: proc (p_class_name: GDExtensionConstStringNamePtr) {.cdecl.}
+
+
+proc loadGDExtensionInterface*(getAddrProc: GDExtensionInterfaceGetProcAddress): ptr GDExtensionInterface =
+  result = cast[ptr GDExtensionInterface](alloc0(sizeof(GDExtensionInterface)))
+  for k, v in result[].fieldPairs:
+    v = cast[typeof(v)](getAddrProc(k))
+    assert v != nil
 
 
 ##  INITIALIZATION

@@ -1,0 +1,8 @@
+# ignore generated bindings
+nimrodot/api.nim
+nimrodot/builtins
+nimrodot/classes/*
+!nimrodot/classes/internal
+nimrodot/enums.nim
+nimrodot/native_structs.nim
+nimrodot/utility_functions.nim

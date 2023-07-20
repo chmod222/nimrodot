@@ -26,6 +26,7 @@ macro godotHooks*(
   let initIdent = name.ident()
   let globIdentIf = "gdInterfacePtr".ident()
   let globIdentTk = "gdTokenPtr".ident()
+  let loadGDExtensionInterfaceSym = bindSym("loadGDExtensionInterface")
 
   def.expectKind(nnkStmtList)
   def[0].expectKind(nnkCall)
@@ -48,11 +49,11 @@ macro godotHooks*(
       `deinitBody`
 
     proc `initIdent`*(
-        interf: ptr GDExtensionInterface;
+        getaddrproc: GDExtensionInterfaceGetProcAddress;
         library: GDExtensionClassLibraryPtr;
         init: ptr GDExtensionInitialization): GDExtensionBool {.exportc, dynlib, cdecl.} =
 
-      `globIdentIf` = interf
+      `globIdentIf` = `loadGDExtensionInterfaceSym`(getaddrproc)
       `globIdentTk` = library
 
       NimMain()

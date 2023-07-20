@@ -40,7 +40,7 @@ when isMainModule:
   let sourceRoot = projectRoot / "nimrodot"
   let apiFile = sourceApiFile.importApi()
 
-  cpFile(projectRoot / "contrib/gdextension_interface.nim", sourceRoot  / "ffi.nim")
+  # cpFile(projectRoot / "contrib/gdextension_interface.nim", sourceRoot  / "ffi.nim")
 
   helpers.apiDef = apiFile
 
